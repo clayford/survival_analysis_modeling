@@ -47,7 +47,7 @@ library(survminer)
 Let's load some data. Two groups of leukemia patients. Patients in remission were randomly assigned to maintenance therapy with either 6-MP or placebo. 21 on treatment, 21 on placebo. (Freireich et al, Blood (1963) 21 (6): 699–716.) The event of interest is "coming out of remission." Going forward when we talk about "survival" or "failure", we mean the event "coming out of remission".
 
 ```{r}
-d <- readRDS(url("https://github.com/clayford/survival_analysis_modeling/raw/main/data/leuk.rds"))
+d <- readRDS("leuk.rds")
 ```
 
 Variables:  
@@ -181,17 +181,28 @@ We usually want to analyze time-to-event _adjusting for additional variables_, s
 For our code alongs we'll work with data from the Worcester Heart Attack Study (WHAS). The main goal of this study was to describe factors associated with survival time following hospital admission for acute myocardial infarction, aka heart attack. The time variable is "time" (in years) and the censoring variable is "fstat".
 
 ```{r}
-whas <- readRDS(url("https://github.com/clayford/survival_analysis_modeling/raw/main/data/WHAS.rds"))
+whas <- readRDS("WHAS.rds")
 ```
 
 (1) Create a KM curve for time versus "gender" (0 = male, 1 = female)
 
+```{r}
+km_fit <- survfit(Surv(time, fstat) ~ gender, data = whas)
+ggsurvplot(km_fit)
+```
 
-(2) What are the estimated survival probabilities for years 1 - 5?
+(3) What are the estimated survival probabilities for years 1 - 5?
+
+```{r}
+summary(km_fit, times = 1:5)
+```
 
 
 (3) Run a log-rank test on the KM curves for gender
 
+```{r}
+survdiff(Surv(time, fstat) ~ gender, data = whas)
+```
 
 
 ## Regression models for survival data
@@ -242,12 +253,20 @@ ggsurvplot(fit2)
 
 (1) Fit a Cox PH model for time on gender using the WHAS data. Is this a good model for understanding survival time after admission to hospital for a heart attack?
 
+```{r}
+whas_m1 <- coxph(Surv(time, fstat) ~ gender, data = whas)
+summary(whas_m1)
+```
 
 (2) How do we interpret the coefficient for gender?
 
+The hazard of death for females (gender = 1) is about 46% higher than males.
 
 (3) Plot the adjusted survival curves for the Cox PH model
 
+```{r}
+ggadjustedcurves(whas_m1, variable = "gender", data = whas)
+```
 
 
 ## The proportional hazards assumption
@@ -275,8 +294,15 @@ If the proportional hazards assumption appears to be violated, we may need to co
 
 (1) Check the proportional hazards assumption of the model we fit in CODE ALONG 2 using a test.
 
+```{r}
+cox.zph(whas_m1)
+```
 
 (2) Visually check the proportional hazards assumption of the model we fit in CODE ALONG 2.
+
+```{r}
+plot(cox.zph(whas_m1))
+```
 
 
 ## Cox PH model with multiple predictors
@@ -348,13 +374,20 @@ subset(adjcurve, time == 10)
 
 (1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate, bpm), and bmi.
 
+```{r}
+whas_m2 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi, data = whas)
+summary(whas_m2)
+```
 
 (2) Assess the proportional hazards assumption of the model.
 
+```{r}
+cox.zph(whas_m2)
+```
 
 (3) What's the interpretation of the age coefficient?
 
-
+Hazard of death increases about 6% for each additional year of age.
 
 ## The Stratified Cox Model
 
@@ -413,12 +446,26 @@ cox.zph(m4)
 
 (1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate, bpm), and bmi, stratified on year (Cohort Year).
 
+```{r}
+whas_m3 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + strata(year), 
+                 data = whas)
+```
 
 (2) Test the no-interaction assumption by fitting a new model that allows the stratification on year to interact with the other variables.
 
+```{r}
+whas_m4 <- coxph(Surv(time, fstat) ~ (gender + age + hr + bmi) * strata(year), 
+            data = whas)
+anova(whas_m3, whas_m4)
+```
 
 (3) Do we need to stratify on year?
 
+```{r}
+whas_m5 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
+                 data = whas)
+cox.zph(whas_m5)
+```
 
 
 ## Regression diagnostics
@@ -536,14 +583,41 @@ summary(whas_m3)
 
 (1) Check the bmi score residuals for subjects with high leverage.
 
+```{r}
+whas_r <- residuals(whas_m3, type = "score")
+plot(whas_r[,"bmi"] ~ whas$bmi)
+```
+
+```{r}
+which(whas_r[,"bmi"] > 20)
+```
+
 
 
 (2) Check the bmi dfbetas for subjects with high influence.
 
+```{r}
+whas_r2 <- residuals(whas_m3, type = "dfbeta")
+colnames(whas_r2) <- colnames(whas_r)
+plot(whas_r2[,"bmi"] ~ whas$bmi)
+```
 
+```{r}
+which(whas_r2[,"bmi"] > 0.004)
+```
 
 (3) Investigate any subjects that are turned up in these assessments and see how their removal from the model changes the results.
 
+```{r}
+whas[112,]
+```
+
+
+```{r}
+whas_m3 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
+                 data = whas[-112,])
+summary(whas_m3)
+```
 
 
 ## The Extended Cox Model
@@ -593,13 +667,105 @@ This was a short introduction to survival analysis. There is much we did not cov
 
 Hopefully this workshop will give you the foundation to continue learning more about survival analysis.
 
+## Additional topics cut for time
+
+## Dealing with ties
+
+When measuring time until an event, it's possible to have ties. For example, three subjects may experience an event at week 8. The `coxph()` function offers three options for handling ties in models when it comes to fitting a cox model:
+
+1. Efron ("efron")
+2. Breslow ("breslow")
+3. Exact Partial Likelihood ("exact")
+
+These can be specified by setting the `ties` argument. The default setting for the `coxph()` function is "efron". According to the coxph help page, "it is more accurate when dealing with tied death times, and is as efficient computationally." The "breslow" option is the original method for dealing with ties and is the default option in programs such as Stata and SAS. "The calculation of the exact partial likelihood is numerically intense." 
+
+If you're trying to replicate the results of a study and getting slightly different coefficients, there's a good chance the data has ties and the study used a different method for handling ties. 
+
+If there are no tied death times all the methods are equivalent. 
+
+And finally, as the `coxph()` help pages says: "In practice the number of ties is usually small, in which case all the methods are statistically indistinguishable." In other words, you probably won't need to worry about ties.
+
+## Simulating data for a Cox PH model
+
+The Cox PH model stated mathematically is as follows:
+
+$$h(t,X) = h_{0}(t)e^{X\beta}$$
+
+Stated in words, this says, "the hazard is a product of the baseline hazard (h0) and an exponentiated weighted sum of the predictors, where the weights are the betas (ie, model coefficients)." The Cox PH model _only_ estimates the model coefficients, it does not estimate the baseline hazard.
+
+We can use this model to simulate data for a Cox PH model. Below we simulate 800 observations using age and sex as predictors. Age is drawn from a Normal distribution with mean = 50. Sex is random selection of 'Male' and 'Female'. The "true" coefficients are 0.04 for age and 0.8 for sex='Male'. The baseline hazard is 0.05. Notice we center Age when we generate the hazard (h). That's because the `coxph()` function internally scales and centers data.
+
+```{r}
+n <- 800
+set.seed(1)
+age <- rnorm(n = n, mean = 50, sd = 10)
+sex <- factor(sample(c('Male','Female'), n, replace = TRUE))
+# baseline hazard
+h0 <- 0.05
+# simulate hazard using Cox PH model
+h <- h0 * exp(0.04 * (age - 50) + .8 * (sex == 'Male'))
+summary(h)
+```
+
+Notice the hazard ranges in value from about 0.01 to 0.51. We need to convert this to time-until-an-event. Bender et al show a method to generate survival time as follows:
+
+$$T = -\frac{\text{log}(u)}{h} $$
+
+where "u" is a random draw from a uniform distribution ranging from 0 to 1.
+
+```{r}
+set.seed(1)
+time <- -log(runif(n))/h
+summary(time)
+```
+
+Now we see time ranging from 0.003 to about 191.
+
+Let's also generate a censoring indicator. Below we set about 15% of the observations to be censored. This time we use `runif(n)` as a preference rather than a requirement. About 15% of the values should be less than 0.15. Those values produce a 0 (censored). Otherwise they return a 1. Notice the censoring is not informative. In other words, it's not associated with any of the predictors or any other process. That's an assumption of the Cox PH model.
+
+```{r}
+set.seed(1)
+status <- ifelse(runif(n) < 0.15, 0, 1)
+mean(status == 0)
+```
+
+Now we "work backwards" to see how close we come to estimating the true coefficients. The 95% confidence interval for sex captures the true value but not the one for age.
+
+```{r}
+m <- coxph(Surv(time, status) ~ age + sex)
+confint(m)
+```
+
+It's worth noting that the baseline hazard value does not affect the coefficient estimates. Feel free to change the `h0` value above to different values and notice the coefficients do not change. This is because the Cox PH model does not estimate the baseline hazard. 
+
+It's also worth pointing out that this model features _time-independent predictors_. To generate data using time-dependent predictors requires more work. See Austin (2012) for details. 
+
+Being able to generate data using a CoxPH model can help in planning experiments and estimating power and sample sizes based on assumed effect sizes and assumed proportion censored. Using our model above, what is the power of our experiment to detect an effect of 0.8 for sex = 'Male' if we assume a sample size of 100, an age effect of 0.04, and censoring around 20%?
+
+```{r}
+study <- function(n, c){
+  age <- rnorm(n = n, mean = 50, sd = 10)
+  sex <- factor(sample(c('Male','Female'), n, replace = TRUE))
+  h0 <- 0.05
+  h <- h0 * exp(0.04 * (age - 50) + .8 * (sex == 'Male'))
+  time <- -log(runif(n))/h
+  status <- ifelse(runif(n) < c, 0, 1)
+  m <- coxph(Surv(time, status) ~ age + sex)
+  confint(m)["sexMale",] # return CI
+}
+# run study 1000 times with 100 subjects (n = 100) and 20% censoring (c = 0.2)
+results <- replicate(1000, study(n = 100, c = 0.2))
+# proportion that capture 'true' effect of 0.8
+apply(results, MARGIN = 2, function(x)x[1] < 0.8 & x[2] > 0.8) |> 
+  mean()
+```
+
+
 ## References
 
 - Allison, P. (2010). Survival Analysis Using SAS, 2nd Ed. SAS Publishing.
+- Austin, P. (2012) Generating survival times to simulate Cox proportional hazards models with time-varying covariates. Statistics in Medicine, 31(29):3946-58.
+- Bender R., Augustin T., and Blettner M. (2005) Generating survival times to simulate Cox proportional hazards models. Statistics in Medicine, 24(11):1713–23.
 - Harrell, F. (2015). Regression Modeling Strategies, 2nd Ed. Springer. 
 - Hosmer, D., Lemeshow, S., and May, S. (2008). Applied Survival Analysis, 2nd Ed. Wiley.
 - Kleinbaum, D. and Klein, M. (2005). Survival Analysis, a Self-Learning Text, 2nd Ed. Springer.
-
-
-
-
