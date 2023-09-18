@@ -29,9 +29,9 @@ Enter a new code chunk and run the code `rnorm(10)` (sample 10 random values fro
 
 Survival analysis is a collection of procedures for analyzing the _time until an event occurs_. The methods were mostly developed in the medical field and concerned time until death, hence the name "survival analysis". Also known as _duration analysis_, _reliability analysis_, or _time-to-event analysis_. In this workshop we'll use the term "survival" generically.
 
-What makes survival analysis challenging is that rarely do all subjects experience the event. When a subject does not experience the event, they are _censored_. 
+What makes survival analysis challenging is that rarely do all subjects experience the event of interest. When a subject does not experience the event, they are _censored_.  The most common type of censoring is _right censoring_. Imagine time flowing as a straight line left to right. When subjects enter the study the line begins on the left. When the event happens, the line ends on the right. If the event does not happen, the subject is right censored.
 
-A study that is analyzed using survival analysis typically has an _observation period_ during which subjects are enrolled and observed. When a subject is censored, that means they didn't experience the event _during_ the observation period. It does not mean they will never experience the event.
+A study that is analyzed using survival analysis typically has an _observation period_ during which subjects are enrolled and observed, or it concerns a window of time where objects are observed. When a subject or object is censored, that means they didn't experience the event _during_ the observation period. It does not mean they will never experience the event. A key assumption of survival analysis is that the censoring is _uninformative_ and not related to when the subject will experience the event. To enforce this, many studies will specify a hard end date.
 
 In this workshop we want to get you up and running with _modeling survival data_. This is where we examine the relationship between survival time and predictors of interest. This is similar to traditional regression modeling, but is made complicated due to censoring.
 
@@ -47,7 +47,8 @@ library(survminer)
 Let's load some data. Two groups of leukemia patients. Patients in remission were randomly assigned to maintenance therapy with either 6-MP or placebo. 21 on treatment, 21 on placebo. (Freireich et al, Blood (1963) 21 (6): 699–716.) The event of interest is "coming out of remission." Going forward when we talk about "survival" or "failure", we mean the event "coming out of remission".
 
 ```{r}
-d <- readRDS("leuk.rds")
+URL <- "https://github.com/clayford/survival_analysis_modeling/raw/main/data/leuk.rds"
+d <- readRDS(url(URL))
 ```
 
 Variables:  
@@ -72,12 +73,11 @@ Some questions of interest:
 
 ## Descriptive methods for survival data
 
-Look at censoring by treatment group. All subjects come out of remission in the placebo group (21). 12 subjects were censored in the trt group. That is, they did not experience failure during the study.
+Let's look at censoring by treatment group. All subjects come out of remission in the placebo group (21). 12 subjects were censored in the trt group. That is, they did not experience failure during the study.
 
 ```{r}
 xtabs(~ rx + status, data = d)
 ```
-
 
 We could also look at average survival times (ie, time observed until the event or censoring). Subjects on "trt" appeared to survive longer. But because there are several censored subjects in the trt group, the true survival time is even larger.
 
@@ -105,7 +105,7 @@ hr[2]/hr[1]
 
 It appears hazard of remission is about 4 times higher in the placebo group. However these are just overall comparisons. We prefer to describe the data _over time_.
 
-The _Kaplan-Meier (KM) curve_ is the workhorse function for visualizing and describing survival data over time. This method was published by Edward Kaplan and Paul Meier in 1958. We can create a KM curve using the `survfit()` function from the {survival} package. To do this, we need to define survival time data using the `Surv()` function. The first argument is survival time, the second argument is the censoring indicator. Values with "+" appended are censored values.
+The _Kaplan-Meier (KM) curve_ is the workhorse function for visualizing and describing survival data over time. This method was published by Edward Kaplan and Paul Meier in 1958. We can create a KM curve using the `survfit()` function from the {survival} package. To do this, we need to define survival time data using the `Surv()` function. The first argument is survival time, the second argument is the censoring indicator. Values with "+" appended are censored values. The first subject went 35-plus weeks without going out of remission.
 
 ```{r}
 Surv(d$survt, d$status)
@@ -141,7 +141,7 @@ Can specify specific times in `summary()` using the `times` argument. Below we l
 summary(fit, times = seq(5,20,5))
 ```
 
-We're probably more interested in time-until-failure by rx group. For this we specify formula `Surv(survt, status) ~ rx`. Now we see different estimated median survival times by rx group.
+We're probably more interested in time-until-failure by treatment group (rx). For this we specify formula `Surv(survt, status) ~ rx`. Now we see different estimated median survival times by rx group.
 
 ```{r}
 fit2 <- survfit(Surv(survt, status) ~ rx, data = d)
@@ -181,7 +181,8 @@ We usually want to analyze time-to-event _adjusting for additional variables_, s
 For our code alongs we'll work with data from the Worcester Heart Attack Study (WHAS). The main goal of this study was to describe factors associated with survival time following hospital admission for acute myocardial infarction, aka heart attack. The time variable is "time" (in years) and the censoring variable is "fstat".
 
 ```{r}
-whas <- readRDS("WHAS.rds")
+URL2 <- "https://github.com/clayford/survival_analysis_modeling/raw/main/data/WHAS.rds"
+whas <- readRDS(url(URL2))
 ```
 
 (1) Create a KM curve for time versus "gender" (0 = male, 1 = female)
@@ -236,6 +237,8 @@ The statistic labeled "Concordance" reports the fraction of all pairs of subject
 
 The three tests at the end each test the null that all model coefficients are simultaneously equal to 0. These are usually all in agreement. When these disagree, go with the Likelihood Ratio Test (Hosmer et al, p. 79)
 
+There is no R-squared reported. According to Hosmer et al, "there is not a single, simple, useful, easy to calculate and easy to interpret [R-squared] measure for a proportional hazards regression model." (p. 194)
+
 We can use the `ggadjustedcurves()` function from the {survminer} package to plot adjusted survival curves from our model.
 
 ```{r}
@@ -281,14 +284,21 @@ cox.zph(m1)
 
 Each variable is tested. The GLOBAL test is that all variables simultaneously satisfy the proportional hazards assumption. In this case they're the same since we only have one predictor. Set `global=FALSE` to suppress the global test.
 
-A visual check is available using the `plot()` method. A fairly straight line indicates the proportional hazards assumption is likely satisfied.
+A visual check is available using the `plot()` method. A fairly straight line indicates the proportional hazards assumption is likely satisfied. The dashed lines are +/- two standard error confidence bands for the smooth line. We would like to be able to draw a straight line through the middle of the confidence bands.
 
 ```{r}
 plot(cox.zph(m1))
 ```
 
-If the proportional hazards assumption appears to be violated, we may need to consider fitting a _stratified Cox PH model_ (among other options). We discuss this later in the workshop.
+The `ggcoxzph()` function from the {survminer} package makes a slightly fancier plot that includes the result of the hypothesis test.
 
+
+```{r}
+ggcoxzph(cox.zph(m1))
+```
+
+
+If the proportional hazards assumption appears to be violated, we may need to consider fitting a _stratified Cox PH model_ (among other options). We discuss this later in the workshop.
 
 ## CODE ALONG 3
 
@@ -354,6 +364,13 @@ cox.zph(m2)
 ```{r}
 plot(cox.zph(m2))
 ```
+
+Or using `ggcoxzph()`
+
+```{r}
+ggcoxzph(cox.zph(m2))
+```
+
 
 Once again we can generate adjusted survival curves using our model. 
 
@@ -477,6 +494,8 @@ When it comes to survival analysis, it's important to check if any subjects have
 
 High leverage itself is not necessarily a concern, however a subject with leverage may influence the estimation of model coefficients.
 
+_Residuals_ are central to model diagnostics. Residuals are the difference between what we observe and what the model predicts. However, "there is no obvious analog to the usual 'observed minus predicted' residual used with other regression methods." (Hosmer et al, p. 170) Recall that we deal with censored observations (ie, no observed value). This complicates matters. Instead different types of residuals have been developed based on martingale theory. The math behind these residuals is difficult and we will take it on faith that they work.
+
 To assess leverage, we can use _score residuals_. Each subject in a Cox PH model will have a _separate score residual for each variable_ in the model. The larger a score residual for a particular variable (in absolute value), the larger the "leverage".
 
 We can extract score residuals using the `residual()` function with `type = score`. Below we request score residuals for model m4. Notice there is a separate residual for each variable in the model.
@@ -571,6 +590,13 @@ coef(m4a)["rxplacebo"]/coef(m4)["rxplacebo"]
 
 With subject 19 removed from the model, the coefficient estimate for rx increases by almost 15%, which makes the treatment look even better. This doesn't mean we should drop the subject. It just helps us understand the impact a single subject has on our model. The decision to drop subjects should be carefully considered and not made based on just residual values.
 
+The {survminer} package offers the `ggcoxdiagnostics()` function to create similar plots, but is currently throwing warnings about deprecated tidyverse functions. It also creates the same type of plot regardless whether the predictor is numeric or categorical.
+
+```{r}
+ggcoxdiagnostics(m4, type = "score")
+```
+
+
 ## CODE ALONG 6
 
 In the previous code along we fit the following model:
@@ -614,9 +640,9 @@ whas[112,]
 
 
 ```{r}
-whas_m3 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
+whas_m4 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
                  data = whas[-112,])
-summary(whas_m3)
+summary(whas_m4)
 ```
 
 
@@ -736,36 +762,83 @@ m <- coxph(Surv(time, status) ~ age + sex)
 confint(m)
 ```
 
+However the model summary reports both coefficients as being positive and different from 0.
+
+```{r}
+coef(summary(m))
+```
+
+
 It's worth noting that the baseline hazard value does not affect the coefficient estimates. Feel free to change the `h0` value above to different values and notice the coefficients do not change. This is because the Cox PH model does not estimate the baseline hazard. 
 
 It's also worth pointing out that this model features _time-independent predictors_. To generate data using time-dependent predictors requires more work. See Austin (2012) for details. 
 
-Being able to generate data using a CoxPH model can help in planning experiments and estimating power and sample sizes based on assumed effect sizes and assumed proportion censored. Using our model above, what is the power of our experiment to detect an effect of 0.8 for sex = 'Male' if we assume a sample size of 100, an age effect of 0.04, and censoring around 20%?
+Being able to generate data using a CoxPH model can help in planning experiments and estimating power and sample sizes based on assumed effect sizes and assumed proportion censored. Using our model above, what is the power of our experiment to detect an effect for sex = 'Male' if we assume an effect size of 0.6, a sample size of 100, an age effect of 0.04, and censoring around 30%?
 
 ```{r}
 study <- function(n, c){
   age <- rnorm(n = n, mean = 50, sd = 10)
   sex <- factor(sample(c('Male','Female'), n, replace = TRUE))
   h0 <- 0.05
-  h <- h0 * exp(0.04 * (age - 50) + .8 * (sex == 'Male'))
+  h <- h0 * exp(0.04 * (age - 50) + .6 * (sex == 'Male'))
   time <- -log(runif(n))/h
   status <- ifelse(runif(n) < c, 0, 1)
   m <- coxph(Surv(time, status) ~ age + sex)
-  confint(m)["sexMale",] # return CI
+  coef(summary(m))["sexMale","Pr(>|z|)"] < 0.05 # less than 0.05?
 }
-# run study 1000 times with 100 subjects (n = 100) and 20% censoring (c = 0.2)
-results <- replicate(1000, study(n = 100, c = 0.2))
-# proportion that capture 'true' effect of 0.8
-apply(results, MARGIN = 2, function(x)x[1] < 0.8 & x[2] > 0.8) |> 
-  mean()
+# run study 1000 times with 100 subjects (n = 100) and 30% censoring (c = 0.30)
+results <- replicate(1000, study(n = 100, c = 0.30))
+# proportion of significant results
+mean(results)
 ```
 
+We would want this power estimate to be higher, say around 0.8 or 0.9. 
+
+To increase power in survival analysis _we need more events_, not just a bigger sample size. Notice by simply assuming a censoring proportion of 0.05, our sample size of 100 now yields about 0.80 power.
+
+```{r}
+results <- replicate(1000, study(n = 100, c = 0.05))
+# proportion of significant results
+mean(results)
+```
+
+## How to calculate Kaplan-Meier estimates
+
+Recall the overall Kaplan-Meier estimates of the leukemia data.
+
+```{r}
+fit <- survfit(Surv(survt, status) ~ 1, data = d)
+summary(fit)
+```
+
+Below we show how the first few values in the "survival" column are calculated.
+
+At week 1 (row 1) we have 42 subjects at risk (n.risk) and two subjects who experienced the event (n.event). The estimated probability of survival to week 1 is calculated as (n.risk - n.event)/n.event 
+
+```{r}
+(42 - 2)/42
+```
+
+At week 2 (row 2) we have 40 subjects at risk and two subjects who experienced the event. The estimated probability of survival to week 2 is calculated as (n.risk - n.event)/n.event _times the estimated probability for week 1 survival_.
+
+```{r}
+((42 - 2)/42) * ((40 - 2)/40)
+```
+
+At week 3 (row 3) we have 38 subjects at risk and one subject who experienced the event. The estimated probability of survival to week 3 is calculated as (n.risk - n.event)/n.event _times the estimated probabilities for week 1 and 2 survival_.
+
+```{r}
+((42 - 2)/42) * ((40 - 2)/40) * ((38 - 1)/38)
+```
+
+And so forth. For this reason, the Kaplan-Meier estimator is also called the _product limit estimator_. At each time point, the estimated probability of survival is obtained by _successive multiplication_ of the estimated conditional probabilities. 
 
 ## References
 
 - Allison, P. (2010). Survival Analysis Using SAS, 2nd Ed. SAS Publishing.
 - Austin, P. (2012) Generating survival times to simulate Cox proportional hazards models with time-varying covariates. Statistics in Medicine, 31(29):3946-58.
 - Bender R., Augustin T., and Blettner M. (2005) Generating survival times to simulate Cox proportional hazards models. Statistics in Medicine, 24(11):1713–23.
+- CRAN Task View: Survival Analysis, https://cran.r-project.org/web/views/Survival.html 
 - Harrell, F. (2015). Regression Modeling Strategies, 2nd Ed. Springer. 
 - Hosmer, D., Lemeshow, S., and May, S. (2008). Applied Survival Analysis, 2nd Ed. Wiley.
 - Kleinbaum, D. and Klein, M. (2005). Survival Analysis, a Self-Learning Text, 2nd Ed. Springer.
