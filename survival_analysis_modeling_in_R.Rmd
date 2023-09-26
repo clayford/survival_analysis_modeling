@@ -44,7 +44,9 @@ library(survival)
 library(survminer)
 ```
 
-Let's load some data. Two groups of leukemia patients. Patients in remission were randomly assigned to maintenance therapy with either 6-MP or placebo. 21 on treatment, 21 on placebo. (Freireich et al, Blood (1963) 21 (6): 699–716.) The event of interest is "coming out of remission." Going forward when we talk about "survival" or "failure", we mean the event "coming out of remission".
+Let's load some data. Two groups of leukemia patients. Patients in remission were randomly assigned to maintenance therapy with either "6-MP" (a new treatment) or placebo. 21 on treatment, 21 on placebo. (Freireich et al, Blood (1963) 21 (6): 699–716.) The event of interest is "coming out of remission." Going forward when we talk about "survival" or "failure", we mean the event "coming out of remission".
+
+The data is available on GitHub as an rds file. This is the file type of a stored R object. Below we enter the URL to the rds file as a character string. We then open the connection to the URL using the `url()` function. Finally we load the rds file using the the `readRDS()` function.
 
 ```{r}
 URL <- "https://github.com/clayford/survival_analysis_modeling/raw/main/data/leuk.rds"
@@ -85,7 +87,7 @@ We could also look at average survival times (ie, time observed until the event 
 aggregate(survt ~ rx, data = d, mean)
 ```
 
-An alternative statistics is the _hazard rate_, defined by total number of failures divided sum of survival times.
+An alternative statistic is the _hazard rate_, defined by total number of failures divided by the sum of survival times.
 
 ```{r}
 # failures (ie, events) per rx group
@@ -105,7 +107,7 @@ hr[2]/hr[1]
 
 It appears hazard of remission is about 4 times higher in the placebo group. However these are just overall comparisons. We prefer to describe the data _over time_.
 
-The _Kaplan-Meier (KM) curve_ is the workhorse function for visualizing and describing survival data over time. This method was published by Edward Kaplan and Paul Meier in 1958. We can create a KM curve using the `survfit()` function from the {survival} package. To do this, we need to define survival time data using the `Surv()` function. The first argument is survival time, the second argument is the censoring indicator. Values with "+" appended are censored values. The first subject went 35-plus weeks without going out of remission.
+The _Kaplan-Meier (KM) curve_ is the workhorse function for visualizing and describing survival data over time. This method was published by Edward Kaplan and Paul Meier in 1958. We can create a KM curve using the `survfit()` function from the {survival} package. To do this, we need to define survival time data using the `Surv()` function. The first argument is survival time, the second argument is the censoring indicator. Values with "+" appended are censored values. For example, the first subject went 35-plus weeks without going out of remission.
 
 ```{r}
 Surv(d$survt, d$status)
@@ -120,8 +122,8 @@ fit
 
 n: number of subjects  
 events: number of subjects who experienced the event  
-median: median survival time  
-0.95LCL, 0.95UCL: lower/upper 95% CI on median survival time
+median: median survival time (12 weeks)  
+0.95LCL, 0.95UCL: lower/upper 95% CI on median survival time [8,22]
 
 Using `plot()` we can create a KM survival curve with 95% confidence bands (dashed lines). The y-axis is probability of "survival". Each "step" down represents 1 or more subjects experiencing the event. There appears to be about a 0.8 probability of not experiencing a remission to week 5.
 
@@ -135,13 +137,13 @@ Calling summary on the KM objects returns survival probabilities (probability of
 summary(fit)
 ```
 
-Can specify specific times in `summary()` using the `times` argument. Below we look at weeks 5, 10, 15, and 20
+We can specify specific times in `summary()` using the `times` argument. Below we look at weeks 5, 10, 15, and 20
 
 ```{r}
 summary(fit, times = seq(5,20,5))
 ```
 
-We're probably more interested in time-until-failure by treatment group (rx). For this we specify formula `Surv(survt, status) ~ rx`. Now we see different estimated median survival times by rx group.
+We're probably more interested in time-until-failure by treatment group (rx). For this we specify `Surv(survt, status) ~ rx`. Now we see different estimated median survival times by rx group.
 
 ```{r}
 fit2 <- survfit(Surv(survt, status) ~ rx, data = d)
@@ -162,7 +164,7 @@ The `ggsurvplot()` function from the {survminer} package looks nicer and include
 ggsurvplot(fit2)
 ```
 
-Setting `risk.table = TRUE` adds a table below the plot showing numbers of subjects at risk at various times in the observation period. The `tables.height = 0.3` argument specifies the height of the table. I arrived at this value using trial and error.
+Setting `risk.table = TRUE` adds a table below the plot showing numbers of subjects at risk at various times in the observation period. The `tables.height = 0.3` argument specifies the height of the table. I arrived at this value by trial and error.
 
 ```{r}
 ggsurvplot(fit2, risk.table = TRUE, tables.height = 0.3)
@@ -174,7 +176,7 @@ Finally we might be interested in testing the null hypothesis that both survival
 survdiff(Surv(survt, status) ~ rx, data = d)
 ```
 
-We usually want to analyze time-to-event _adjusting for additional variables_, such as age, lab values, patient history, etc. For this we turn to regression modeling.
+We usually want to analyze time-to-event _adjusting for additional variables_, such as age, lab values, patient history, etc. For this we move on to regression modeling.
 
 ## CODE ALONG 1
 
@@ -208,7 +210,7 @@ survdiff(Surv(time, fstat) ~ gender, data = whas)
 
 ## Regression models for survival data
 
-Regression models allow us to study the effect of multiple variables on the survival experience. For modeling survival time it is convenient to model the _hazard of the event_ instead of the raw time-until-event or probability of event. This means we're estimating a _hazard function_.
+Regression models allow us to study the effect of multiple variables on the survival experience. For modeling survival time it is convenient to model the _hazard of the event_ instead of the raw time-until-event or probability of event. This means estimating a _hazard function_.
 
 It turns out that once we estimate a hazard function, we can also estimate a survival function, which means we can use our model to produce _adjusted survival curves_ similar to the KM curves we created to describe the data. 
 
@@ -235,7 +237,7 @@ The "exp(-coef)" is the hazard ratio in the opposite direction. The hazard of fa
 
 The statistic labeled "Concordance" reports the fraction of all pairs of subjects where the model correctly predicts the individual with the earlier event. Values in the 0.50 - 0.55 range suggest a flip of a coin would do as well as our model at correctly ordering pairs of subjects. The value of 0.69 is promising but not excellent. 
 
-The three tests at the end each test the null that all model coefficients are simultaneously equal to 0. These are usually all in agreement. When these disagree, go with the Likelihood Ratio Test (Hosmer et al, p. 79)
+The three tests at the end test the null that all model coefficients are simultaneously equal to 0. These are usually all in agreement. When these disagree, go with the Likelihood Ratio Test (Hosmer et al, p. 79)
 
 There is no R-squared reported. According to Hosmer et al, "there is not a single, simple, useful, easy to calculate and easy to interpret [R-squared] measure for a proportional hazards regression model." (p. 194)
 
@@ -245,7 +247,7 @@ We can use the `ggadjustedcurves()` function from the {survminer} package to plo
 ggadjustedcurves(m1, variable = "rx", data = d)
 ```
 
-Compare to the descriptive KM plot (generated below). Notice the adjusted survival curves from the Cox PH model fit do not indicate censored observations. These are model-predicted expected survival curves calculated based on Cox PH model. The KM plot shows observed data. Also notice the model-generated plot stops around 20 weeks and does not extrapolate since no one in the placebo group lasted beyond then.
+Compare to the descriptive KM plot (generated below). Notice the adjusted survival curves from the Cox PH model fit do not indicate censored observations. These are model-predicted expected survival curves calculated based on the Cox PH model. The KM plot shows observed data. Also notice the model-generated plot stops around 20 weeks and does not extrapolate since no one in the placebo group lasted beyond then.
 
 ```{r}
 # KM plot
@@ -276,7 +278,7 @@ ggadjustedcurves(whas_m1, variable = "gender", data = whas)
 
 The Cox PH model assumes that the _hazard ratio is constant over time_. The model above implies the hazard of failure on placebo is about 4.8 times higher than the hazard of failure on treatment, no matter how long we observe the subjects. Notice the summary output above makes no reference to time.
 
-Fortunately the {survival} package makes it pretty easy to assess these assumptions using the `cox.zph()` function. Use it on your model object. The null hypothesis is the hazard ratios are independent of time. A small p-value is evidence against the null hypothesis.
+Fortunately the {survival} package makes it pretty easy to assess these assumptions using the `cox.zph()` function. Use it on your model object. The null hypothesis is the hazard ratios are independent of time. A small p-value is evidence against the null hypothesis. The proportional hazard assumption is probably safe if the p-value is higher than, say, 0.05.
 
 ```{r}
 cox.zph(m1)
@@ -332,7 +334,7 @@ summary(m2)
 
 Adjusted for white blood cell count, it appears the hazard of failure for subjects on placebo is about 4 times higher than the hazard of failure for subjects on treatment. Likewise, adjusted for rx, the hazard of failure increases by about a factor of 5 for each one unit increase in logwbc. (In this case, that's probably not an interpretation we're interested in. We simply want to adjust for subjects' white blood cell count.)
 
-Adjusting for logwbc reduces the effect of rx about 12%. This is a sign that logwbc may be _confounded_ with rx. 
+Adjusting for logwbc reduces the effect of rx about 12%. This is a sign that logwbc may be _confounded_ with rx, and that we should include it in our model.
 
 ```{r}
 coef(m2)[1]/coef(m1)[1]
@@ -389,7 +391,7 @@ subset(adjcurve, time == 10)
 
 ## CODE ALONG 4
 
-(1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate, bpm), and bmi.
+(1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate), and bmi.
 
 ```{r}
 whas_m2 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi, data = whas)
@@ -461,7 +463,7 @@ cox.zph(m4)
 
 ## CODE ALONG 5
 
-(1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate, bpm), and bmi, stratified on year (Cohort Year).
+(1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate, and bmi, stratified on year (Cohort Year).
 
 ```{r}
 whas_m3 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + strata(year), 
@@ -494,11 +496,11 @@ When it comes to survival analysis, it's important to check if any subjects have
 
 High leverage itself is not necessarily a concern, however a subject with leverage may influence the estimation of model coefficients.
 
-_Residuals_ are central to model diagnostics. Residuals are the difference between what we observe and what the model predicts. However, "there is no obvious analog to the usual 'observed minus predicted' residual used with other regression methods." (Hosmer et al, p. 170) Recall that we deal with censored observations (ie, no observed value). This complicates matters. Instead different types of residuals have been developed based on martingale theory. The math behind these residuals is difficult and we will take it on faith that they work.
+_Residuals_ are central to model diagnostics. Residuals are the difference between what we observe and what the model predicts. However, "there is no obvious analog to the usual 'observed minus predicted' residual used with other regression methods." (Hosmer et al, p. 170) Recall that we deal with censored observations (ie, no observed value). This complicates matters. Instead, different types of residuals have been developed based on martingale theory. The math behind these residuals is difficult and we will take it on faith that it works.
 
 To assess leverage, we can use _score residuals_. Each subject in a Cox PH model will have a _separate score residual for each variable_ in the model. The larger a score residual for a particular variable (in absolute value), the larger the "leverage".
 
-We can extract score residuals using the `residual()` function with `type = score`. Below we request score residuals for model m4. Notice there is a separate residual for each variable in the model.
+We can extract score residuals using the `residual()` function with `type = score`. Below we request score residuals for model m4. Notice there is a _separate residual_ for each variable in the model.
 
 ```{r}
 r <- residuals(m4, type = "score")
@@ -537,7 +539,7 @@ Subject 19 appears in both results. We can inspect the records for these subject
 d[union(i,j),]
 ```
 
-None of these subjects seem to have highly unusual values relative to the rest of the data. 
+Subject 19 appears to stand out by being in the treatment group but experiencing "failure" at only 6 weeks. 
 
 To assess influence, we can use _scaled score residuals_, also known as "dfbetas". Each subject in a Cox PH model will have a _separate dfbeta for each variable_ in the model. The larger a dfbeta for a particular variable (in absolute value), the larger the "influence".
 
@@ -580,7 +582,7 @@ which(r2[,1] < -0.1)
 
 Once again subject 19 appears in both residual sets as having a large residual relative to the rest of the data.
 
-To find out how variables are influencing a model, we need to drop them and refit the model. With such a small data set, we would want to think carefully before dropping subjects. However, let's say we want to see how much subject 19 is influencing the model. We can refit the model without subject 19 and calculate the change in the rx coefficient.
+To find out how variables are influencing a model, we need to drop them and refit the model. With such a small data set, we would want to think carefully before permanently dropping subjects. However, let's say we want to see how much subject 19 is influencing the model. We can refit the model without subject 19 and calculate the change in the rx coefficient.
 
 ```{r}
 m4a <- coxph(Surv(survt, status) ~ rx + logwbc + strata(sex), 
@@ -668,7 +670,7 @@ data(heart, package="survival")
 head(jasa1, n = 10)
 ```
 
-To include a time-dependent variable in a Cox PH model, we need to _include the time interval_ in the `Surv()` function. Notice below we have `Surv(start, stop, event)`. Here model the hazard of death as a function of whether the subject had a transplant, whether they had prior bypass surgery, and their age.
+To include a time-dependent variable in a Cox PH model, we need to _include the time interval_ in the `Surv()` function. Notice below we have `Surv(start, stop, event)`. Here we model the hazard of death as a function of whether the subject had a transplant, whether they had prior bypass surgery, and their age.
 
 ```{r}
 tdm <- coxph(Surv(start, stop, event) ~ transplant + surgery + age,
@@ -677,8 +679,6 @@ summary(tdm)
 ```
 
 According to this simplistic model, prior bypass surgery seems to lower the hazard of death when while waiting for/after receiving a heart transplant by about 54%.
-
-
 
 ## Wrap-up
 
@@ -693,9 +693,19 @@ This was a short introduction to survival analysis. There is much we did not cov
 
 Hopefully this workshop will give you the foundation to continue learning more about survival analysis.
 
-## Additional topics cut for time
+## References
 
-## Dealing with ties
+- Allison, P. (2010). Survival Analysis Using SAS, 2nd Ed. SAS Publishing.
+- Austin, P. (2012) Generating survival times to simulate Cox proportional hazards models with time-varying covariates. Statistics in Medicine, 31(29):3946-58.
+- Bender R., Augustin T., and Blettner M. (2005) Generating survival times to simulate Cox proportional hazards models. Statistics in Medicine, 24(11):1713–23.
+- CRAN Task View: Survival Analysis, https://cran.r-project.org/web/views/Survival.html 
+- Harrell, F. (2015). Regression Modeling Strategies, 2nd Ed. Springer. 
+- Hosmer, D., Lemeshow, S., and May, S. (2008). Applied Survival Analysis, 2nd Ed. Wiley.
+- Kleinbaum, D. and Klein, M. (2005). Survival Analysis, a Self-Learning Text, 2nd Ed. Springer.
+
+## Appendix
+
+### Dealing with ties
 
 When measuring time until an event, it's possible to have ties. For example, three subjects may experience an event at week 8. The `coxph()` function offers three options for handling ties in models when it comes to fitting a cox model:
 
@@ -711,7 +721,7 @@ If there are no tied death times all the methods are equivalent.
 
 And finally, as the `coxph()` help pages says: "In practice the number of ties is usually small, in which case all the methods are statistically indistinguishable." In other words, you probably won't need to worry about ties.
 
-## Simulating data for a Cox PH model
+### Simulating data for a Cox PH model
 
 The Cox PH model stated mathematically is as follows:
 
@@ -802,7 +812,7 @@ results <- replicate(1000, study(n = 100, c = 0.05))
 mean(results)
 ```
 
-## How to calculate Kaplan-Meier estimates
+### How to calculate Kaplan-Meier estimates
 
 Recall the overall Kaplan-Meier estimates of the leukemia data.
 
@@ -833,12 +843,3 @@ At week 3 (row 3) we have 38 subjects at risk and one subject who experienced th
 
 And so forth. For this reason, the Kaplan-Meier estimator is also called the _product limit estimator_. At each time point, the estimated probability of survival is obtained by _successive multiplication_ of the estimated conditional probabilities. 
 
-## References
-
-- Allison, P. (2010). Survival Analysis Using SAS, 2nd Ed. SAS Publishing.
-- Austin, P. (2012) Generating survival times to simulate Cox proportional hazards models with time-varying covariates. Statistics in Medicine, 31(29):3946-58.
-- Bender R., Augustin T., and Blettner M. (2005) Generating survival times to simulate Cox proportional hazards models. Statistics in Medicine, 24(11):1713–23.
-- CRAN Task View: Survival Analysis, https://cran.r-project.org/web/views/Survival.html 
-- Harrell, F. (2015). Regression Modeling Strategies, 2nd Ed. Springer. 
-- Hosmer, D., Lemeshow, S., and May, S. (2008). Applied Survival Analysis, 2nd Ed. Wiley.
-- Kleinbaum, D. and Klein, M. (2005). Survival Analysis, a Self-Learning Text, 2nd Ed. Springer.
