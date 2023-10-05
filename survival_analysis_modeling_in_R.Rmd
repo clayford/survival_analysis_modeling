@@ -31,7 +31,7 @@ Survival analysis is a collection of procedures for analyzing the _time until an
 
 What makes survival analysis challenging is that rarely do all subjects experience the event of interest. When a subject does not experience the event, they are _censored_.  The most common type of censoring is _right censoring_. Imagine time flowing as a straight line left to right. When subjects enter the study the line begins on the left. When the event happens, the line ends on the right. If the event does not happen, the subject is right censored.
 
-A study that is analyzed using survival analysis typically has an _observation period_ during which subjects are enrolled and observed, or it concerns a window of time where objects are observed. When a subject or object is censored, that means they didn't experience the event _during_ the observation period. It does not mean they will never experience the event. A key assumption of survival analysis is that the censoring is _uninformative_ and not related to when the subject will experience the event. To enforce this, many studies will specify a hard end date.
+A study that is analyzed using survival analysis typically has an _observation period_ during which subjects are enrolled and observed, or it concerns a window of time where objects are observed. When a subject or object is censored, that means they didn't experience the event _during_ the observation period. It does not mean they will never experience the event. A key assumption of survival analysis is that the censoring is _uninformative_ and not related to when the subject will experience the event. To try and enforce this, many studies will specify a hard end date to a study.
 
 In this workshop we want to get you up and running with _modeling survival data_. This is where we examine the relationship between survival time and predictors of interest. This is similar to traditional regression modeling, but is made complicated due to censoring.
 
@@ -59,7 +59,6 @@ Variables:
 - sex (0 = female, 1 = male)
 - logwbc (log transformed white blood cell count)
 - rx (treatment or placebo)
-- lwbc3 (log WBC categorized in 3 ordered categories)
 
 ```{r}
 head(d, n = 8)
@@ -214,7 +213,13 @@ Regression models allow us to study the effect of multiple variables on the surv
 
 It turns out that once we estimate a hazard function, we can also estimate a survival function, which means we can use our model to produce _adjusted survival curves_ similar to the KM curves we created to describe the data. 
 
-The standard regression model for survival data is the _Cox Proportional Hazards Model_, named for David Cox who published the method in 1972. The Cox Proportional Hazards Model makes _no assumption_ about the distribution of the time-to-event. It is usually a safe and robust model. Even if there is a better-fitting "correct" parametric model (i.e., a model that makes assumptions about the distribution of survival time), the Cox model will often closely approximate the results.
+The standard regression model for survival data is the _Cox Proportional Hazards Model_, named for David Cox who published the method in 1972. The Cox Proportional Hazards (Cox PH) Model makes _no assumption_ about the distribution of the time-to-event. It is usually a safe and robust model. Even if there is a better-fitting "correct" parametric model (i.e., a model that makes assumptions about the distribution of survival time), the Cox PH model will often closely approximate the results.
+
+The Cox PH model stated mathematically is as follows:
+
+$$h(t,X) = h_{0}(t)e^{X\beta}$$
+
+Stated in words, this says, "the hazard is a product of the baseline hazard (h0) and an exponentiated weighted sum of the predictors, where the weights are the betas (ie, model coefficients)." The Cox PH model _only_ estimates the model coefficients, it does not estimate the baseline hazard. Thus the Cox PH model estimates the _proportional change_ from some baseline hazard function.
 
 The {survival} package provides the `coxph()` function for fitting Cox PH models. We use the function as we would `lm()` or `glm()`, but with the left-hand side requiring the use of the `Surv()` function.
 
@@ -592,7 +597,7 @@ coef(m4a)["rxplacebo"]/coef(m4)["rxplacebo"]
 
 With subject 19 removed from the model, the coefficient estimate for rx increases by almost 15%, which makes the treatment look even better. This doesn't mean we should drop the subject. It just helps us understand the impact a single subject has on our model. The decision to drop subjects should be carefully considered and not made based on just residual values.
 
-The {survminer} package offers the `ggcoxdiagnostics()` function to create similar plots, but is currently throwing warnings about deprecated tidyverse functions. It also creates the same type of plot regardless whether the predictor is numeric or categorical.
+The {survminer} package offers the `ggcoxdiagnostics()` function to create similar plots, but is currently (as of Sept 2023) throwing warnings about deprecated tidyverse functions. It also creates the same type of plot regardless whether the predictor is numeric or categorical.
 
 ```{r}
 ggcoxdiagnostics(m4, type = "score")
@@ -702,6 +707,7 @@ Hopefully this workshop will give you the foundation to continue learning more a
 - Harrell, F. (2015). Regression Modeling Strategies, 2nd Ed. Springer. 
 - Hosmer, D., Lemeshow, S., and May, S. (2008). Applied Survival Analysis, 2nd Ed. Wiley.
 - Kleinbaum, D. and Klein, M. (2005). Survival Analysis, a Self-Learning Text, 2nd Ed. Springer.
+- https://www.publichealth.columbia.edu/research/population-health-methods/time-event-data-analysis
 
 ## Appendix
 
