@@ -68,7 +68,7 @@ It's important to note that binary "status" doesn't mean "success/failure" like 
 
 Some questions of interest: 
 
-- Does the 6-MP treatment increase time until failure? 
+- Does the 6-MP treatment increase time until "failure"? 
 - Do we need to control for log WBC? 
 - Is the treatment effect the same for males and females?
 
@@ -219,7 +219,7 @@ The Cox PH model stated mathematically is as follows:
 
 $$h(t,X) = h_{0}(t)e^{X\beta}$$
 
-Stated in words, this says, "the hazard is a product of the baseline hazard (h0) and an exponentiated weighted sum of the predictors, where the weights are the betas (ie, model coefficients)." The Cox PH model _only_ estimates the model coefficients, it does not estimate the baseline hazard. Thus the Cox PH model estimates the _proportional change_ from some baseline hazard function.
+Stated in words, this says, "the hazard is a product of the baseline hazard (h0) and an exponentiated weighted sum of the predictors, where the weights are the betas (ie, model coefficients)." The Cox PH model _only_ estimates the model coefficients, it does not directly estimate the baseline hazard. Thus the Cox PH model estimates the _proportional change_ from some baseline hazard function. Only the relative hazard is modeled.
 
 The {survival} package provides the `coxph()` function for fitting Cox PH models. We use the function as we would `lm()` or `glm()`, but with the left-hand side requiring the use of the `Surv()` function.
 
@@ -289,9 +289,9 @@ Fortunately the {survival} package makes it pretty easy to assess these assumpti
 cox.zph(m1)
 ```
 
-Each variable is tested. The GLOBAL test is that all variables simultaneously satisfy the proportional hazards assumption. In this case they're the same since we only have one predictor. Set `global=FALSE` to suppress the global test.
+Each variable is tested. The GLOBAL test is that all variables _simultaneously_ satisfy the proportional hazards assumption. In this case they're the same since we only have one predictor. Set `global=FALSE` to suppress the global test.
 
-A visual check is available using the `plot()` method. A fairly straight line indicates the proportional hazards assumption is likely satisfied. The dashed lines are +/- two standard error confidence bands for the smooth line. We would like to be able to draw a straight line through the middle of the confidence bands.
+A visual check of the proportional hazards assumption is available using the `plot()` method. A smooth trend line is plotted through residuals versus time. (Residuals are complicated for survival models. We talk more about them below.) A fairly straight line indicates the proportional hazards assumption is likely satisfied. The dashed lines are +/- two standard error confidence bands for the smooth line. We would like to be able to draw a straight line through the middle of the confidence bands. This implies the model predictions, which are relative hazards, are staying consistent over time. 
 
 ```{r}
 plot(cox.zph(m1))
@@ -428,13 +428,15 @@ Now let's assess the proportional hazards assumption for all variables. The null
 cox.zph(m3, global = FALSE)
 ```
 
-Likewise the plot shows a curvy line. We index with `[3]` to see just the plot for sex. (sex is the third variable in the model.)
+Likewise the plot shows a curvy line. We use `var = "sex"` to see just the plot for sex. 
 
 ```{r}
-plot(cox.zph(m3)[3])
+plot(cox.zph(m3), var = "sex")
 ```
 
-One way to address a violation of the proportional hazards assumption is with a _stratified Cox model_. The general idea is to group the data according to the strata of a variable that violates the assumption, fit a Cox PH model to each strata, and combine the results into a single model. The coefficients of the remaining variables are _assumed to be constant across strata_. A drawback of this approach is the inability to examine the effects of the stratifying variable. Stratification is most natural when a covariate takes on only a few distinct values (like sex), and when the effect of the stratifying variable is not of direct interest.
+One way to address a violation of the proportional hazards assumption is with a _stratified Cox model_. The general idea is to group the data according to the strata of a variable that violates the assumption, fit a Cox PH model to each strata, and combine the results into a single model. The coefficients of the remaining variables are _assumed to be constant across strata_. We might think of them as "pooled" estimates. 
+
+A drawback of this approach is the inability to examine the effects of the stratifying variable. On the other hand, we may view it as a unique feature that allows us to _adjust for variables that are not modeled_. Stratification is most natural when a covariate takes on only a few distinct values (like sex), and when the effect of the stratifying variable is not of direct interest.
 
 We can implement a stratified Cox model by wrapping the variable to stratify on in the `strata()` function. Notice that sex is no longer reported in the model. Since we stratified on it, we do not estimate its effect. Also, the effects of rx and logwbc are assumed to be the same for males and females. This is called the _no-interaction assumption_.
 
@@ -463,6 +465,26 @@ Finally, we can re-check the proportional hazards assumption of the stratified m
 
 ```{r}
 cox.zph(m4)
+```
+
+The stratified Cox PH model is commonly used in practice to adjust for multiple sites in large clinical trials.
+
+Again we can plot adjusted survival curves for the variables we modeled.
+
+```{r}
+ggadjustedcurves(m4, variable = "rx", data = d)
+```
+
+We can also plot adjusted survival curves for the stratifying variable.
+
+```{r}
+ggadjustedcurves(m4, variable = "sex", data = d)
+```
+
+Notice this isn't much different from what we get when plot a Kaplan-Meier curve for the raw data by sex. We only stratified on sex in the model above, we didn't use it as a predictor.
+
+```{r}
+survfit(Surv(survt, status) ~ sex, data = d) |> ggsurvplot()
 ```
 
 
@@ -655,6 +677,109 @@ summary(whas_m4)
 
 ## The Extended Cox Model
 
+So far we have not incorporated time into our models. Time comes into play in two different ways:
+
+1. _Time-dependent coefficients_. We may have model coefficients that vary with time. In other words, they may _interact with time_ and change. For example, the effect of a treatment on the hazard may decrease over time. Or the effect of age on the hazard may increase over time.
+2. _Time-dependent variables_. We may have variables that _change over time_. In other words, we may have multiple measures on variables. For example, we may have weekly measurements of white blood cell counts, or we may have a time-dependent intervention that happens during the observation period, such as a transplant.
+
+In either case we need to extend the Cox PH model to incorporate time. Recall the standard Cox PH model. Notice time is not part of the linear predictor (XB). It's only part of the baseline hazard which it doesn't estimate.
+
+$$h(t,X) = h_{0}(t)e^{X\beta}$$
+
+The _model for time-dependent coefficients_ allows coefficients to depend on time:
+
+$$h(t,X) = h_{0}(t)e^{X\beta(t)}$$
+
+The _model for time-dependent variables_ allows variables to depend on time:
+
+$$h(t,X) = h_{0}(t)e^{X(t)\beta}$$
+
+Let's look at one example of each.
+
+### Time-dependent coefficients
+
+Recall the proportional hazards assumption: the hazard ratio is _constant over time_. When this assumption is violated for a _continuous variable_, we may wish to incorporate a time-dependent coefficient. (For a categorical variable, we would probably pursue a stratified Cox PH model.)
+
+To illustrate we'll use the veteran data set that comes with the {survival} package, which has data on a randomized trial of two treatment regimens for lung cancer. Below we model survival time as a function treatment (1=standard, 2=test) and Karnofsky performance score (0 - 100), which is a scale that measures a patient's ability to carry out activities of daily living. Higher score is better. The data has information on 137 subjects.
+
+```{r}
+nrow(veteran)
+```
+
+Notice the test for proportional hazards is soundly rejected for the "karno" variable.
+
+```{r}
+tdm1 <- coxph(Surv(time, status) ~ trt + karno, data = veteran)
+cox.zph(tdm1)
+```
+
+Notice how wiggly the line is in the associated plot. 
+
+```{r}
+plot(cox.zph(tdm1), var = "karno")
+```
+
+At first glance it seems we can simply add the time variable to the right-hand side of the model to model a time-dependent coefficient. But this would be a mistake. The `coxph()` function will issue a warning if you try this.
+
+```{r}
+tdmX <- coxph(Surv(time, status) ~ trt + karno + karno:time, data = veteran)
+```
+
+The correct way is to use a _time-transform_ function via the `tt` argument. The usual syntax is `function(x, t, ...) x * t` where `x` is the argument for the predictor, `t` is the argument for `time`, and `...` is the "dots" argument used to pass through other arguments from other functions. Below we log transform the `t` argument since time is heavily skewed.
+
+```{r}
+tdm2 <- coxph(Surv(time, status) ~ trt + karno + tt(karno), data = veteran,
+              tt = function(x, t, ...) x * log(t))
+summary(tdm2)
+```
+
+The time dependent coefficient is estimated as -0.083146 + 0.013236*log(t). It appears to be significant based on the z and p values.
+
+We cannot formally compare the model with time-dependent coefficient to the first model because they are _fit to different size data sets_. Notice the error message when we try using `anova()`:
+
+```{r}
+anova(tdm1, tdm2)
+```
+
+If we set `x = TRUE` when fitting the models we can save the predictor data used to fit the model and compare the sizes. Notice the second model has 5955 rows of data versus only 137 for the first.
+
+```{r}
+tdm1 <- coxph(Surv(time, status) ~ trt + karno, data = veteran, x = TRUE)
+tdm2 <- coxph(Surv(time, status) ~ trt + karno + tt(karno), data = veteran,
+              tt = function(x, t, ...) x * log(t), x = TRUE)
+c("tdm1" = nrow(tdm1$x), "tdm2" = nrow(tdm2$x))
+```
+
+Using a time-transform function _expands the data_ to create multiple observations per subject over time. The number of observations per subject depends on the time value for the subject and how they rank relative to the rest of the subjects. If you have a small time relative to everyone else, you have few records. If you have a large time, you have many records. In this case, everyone's "karno" score needs to be evaluated at every time point until they experience the event or are censored. 
+
+Below we show the expansion for the first four subjects. Subjects 85 and 77 were the first to experience the event. Subject 95 was the second, so they get two records. Subject 53 was the third, so they get three records, and so on. (These are row numbers in the original data set.)
+
+```{r}
+X <- cbind(tdm2$x, subj = trunc(as.numeric(rownames(tdm2$x)))) |>
+  as.data.frame()
+View(subset(X, subj %in% c(85,77,95,53)))
+```
+
+If we want, we can expand the data ourselves using the `survSplit()` function from the {survival} package. Now we re-fit both models to the expanded data. This time it's OK to put "time" on the right-hand side of the model. You may wish to verify these model results match the previous fits.
+
+```{r}
+dtimes <- unique(veteran$time[veteran$status == 1])
+veteran_long <- survSplit(Surv(time, status) ~ ., veteran, 
+                    cut = dtimes)
+tdm3 <- coxph(Surv(tstart, time, status) ~ trt + karno, 
+              data = veteran_long)
+tdm4 <- coxph(Surv(tstart, time, status) ~ trt + karno + karno:log(time), 
+              data = veteran_long)
+```
+
+Now we can formally compare the models using the `anova()` function. It appears the model with the time-dependent coefficient is better.
+
+```{r}
+anova(tdm3, tdm4)
+```
+
+### Time-dependent variables
+
 We sometimes have variables that change over time (age, weight, status, etc). To accommodate these variables we can no longer assume proportional hazards. We must _extend_ the Cox model.
 
 Time-dependent variables are usually coded as _intervals of time_. This is sometimes called the _counting process method_. For example:
@@ -685,6 +810,14 @@ summary(tdm)
 
 According to this simplistic model, prior bypass surgery seems to lower the hazard of death when while waiting for/after receiving a heart transplant by about 54%.
 
+```{r}
+tdm2 <- coxph(Surv(start, stop, event) ~ transplant + surgery + tt(age),
+             data= jasa1, tt = function(x,t,...)x*log(t))
+summary(tdm2)
+```
+
+
+
 ## Wrap-up
 
 This was a short introduction to survival analysis. There is much we did not cover, such as:
@@ -700,14 +833,17 @@ Hopefully this workshop will give you the foundation to continue learning more a
 
 ## References
 
-- Allison, P. (2010). Survival Analysis Using SAS, 2nd Ed. SAS Publishing.
+- Allison, P. (2010). _Survival Analysis Using SAS, 2nd Ed_. SAS Publishing.
 - Austin, P. (2012) Generating survival times to simulate Cox proportional hazards models with time-varying covariates. Statistics in Medicine, 31(29):3946-58.
 - Bender R., Augustin T., and Blettner M. (2005) Generating survival times to simulate Cox proportional hazards models. Statistics in Medicine, 24(11):1713–23.
 - CRAN Task View: Survival Analysis, https://cran.r-project.org/web/views/Survival.html 
-- Harrell, F. (2015). Regression Modeling Strategies, 2nd Ed. Springer. 
-- Hosmer, D., Lemeshow, S., and May, S. (2008). Applied Survival Analysis, 2nd Ed. Wiley.
-- Kleinbaum, D. and Klein, M. (2005). Survival Analysis, a Self-Learning Text, 2nd Ed. Springer.
+- Harrell, F. (2015). _Regression Modeling Strategies, 2nd Ed_. Springer. 
+- Hosmer, D., Lemeshow, S., and May, S. (2008). _Applied Survival Analysis, 2nd Ed_. Wiley.
+- Kleinbaum, D. and Klein, M. (2005). _Survival Analysis, a Self-Learning Text, 2nd Ed_. Springer.
 - https://www.publichealth.columbia.edu/research/population-health-methods/time-event-data-analysis
+- https://missingdatasolutions.rbind.io/2022/12/cox-baseline-hazard/
+- Freireich, et al. (1963) The Effect of 6-Mercaptopurine on the Duration of Steroid-induced Remissions in Acute Leukemia. Blood (1963) 21 (6): 699–716. https://doi.org/10.1182/blood.V21.6.699.699
+
 
 ## Appendix
 
@@ -725,7 +861,7 @@ If you're trying to replicate the results of a study and getting slightly differ
 
 If there are no tied death times all the methods are equivalent. 
 
-And finally, as the `coxph()` help pages says: "In practice the number of ties is usually small, in which case all the methods are statistically indistinguishable." In other words, you probably won't need to worry about ties.
+And finally, as the `coxph()` help pages says: "In practice the number of ties is usually small, in which case all the methods are statistically indistinguishable." In other words, you probably don't need to worry about ties.
 
 ### Simulating data for a Cox PH model
 
