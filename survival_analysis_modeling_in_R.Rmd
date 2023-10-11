@@ -728,7 +728,8 @@ tdmX <- coxph(Surv(time, status) ~ trt + karno + karno:time, data = veteran)
 The correct way is to use a _time-transform_ function via the `tt` argument. The usual syntax is `function(x, t, ...) x * t` where `x` is the argument for the predictor, `t` is the argument for `time`, and `...` is the "dots" argument used to pass through other arguments from other functions. Below we log transform the `t` argument since time is heavily skewed.
 
 ```{r}
-tdm2 <- coxph(Surv(time, status) ~ trt + karno + tt(karno), data = veteran,
+tdm2 <- coxph(Surv(time, status) ~ trt + karno + tt(karno), 
+              data = veteran,
               tt = function(x, t, ...) x * log(t))
 summary(tdm2)
 ```
@@ -752,25 +753,42 @@ c("tdm1" = nrow(tdm1$x), "tdm2" = nrow(tdm2$x))
 
 Using a time-transform function _expands the data_ to create multiple observations per subject over time. The number of observations per subject depends on the time value for the subject and how they rank relative to the rest of the subjects. If you have a small time relative to everyone else, you have few records. If you have a large time, you have many records. In this case, everyone's "karno" score needs to be evaluated at every time point until they experience the event or are censored. 
 
-Below we show the expansion for the first four subjects. Subjects 85 and 77 were the first to experience the event. Subject 95 was the second, so they get two records. Subject 53 was the third, so they get three records, and so on. (These are row numbers in the original data set.)
+Below we show the expansion for the first four subjects. Subjects 85 and 77 were the first to experience the event. Subject 95 was the second, so they get two records. Subject 53 was the third, so they get three records, and so on. (The subject "numbers" are row numbers in the original data set.)
 
 ```{r}
-X <- cbind(tdm2$x, subj = trunc(as.numeric(rownames(tdm2$x)))) |>
+X <- cbind(tdm2$x, tdm2$y, subj = trunc(as.numeric(rownames(tdm2$x)))) |>
   as.data.frame()
-View(subset(X, subj %in% c(85,77,95,53)))
+tmp <- subset(X, subj %in% c(85,77,95,53))
+tmp[order(tmp$subj, tmp$time),]
 ```
 
-If we want, we can expand the data ourselves using the `survSplit()` function from the {survival} package. Now we re-fit both models to the expanded data. This time it's OK to put "time" on the right-hand side of the model. You may wish to verify these model results match the previous fits.
+If we want, we can expand the data ourselves using the `survSplit()` function from the {survival} package. This function splits each record into multiple subrecords at each cut time. To match what the time-transform function did, we need to specify the _unique uncensored times_ as the cut times. When finished, we have a dataset with 5955 rows and extra a column called "tstart".
 
 ```{r}
 dtimes <- unique(veteran$time[veteran$status == 1])
-veteran_long <- survSplit(Surv(time, status) ~ ., veteran, 
-                    cut = dtimes)
+veteran_long <- survSplit(Surv(time, status) ~ ., 
+                          data = veteran, 
+                          cut = dtimes)
+head(veteran_long)
+```
+
+Now we re-fit both models to the expanded data. Notice we need to _include the time interval_ in the `Surv()` function: `Surv(tstart, time, status)`. This time it's OK to put "time" on the right-hand side of the model. 
+
+```{r}
 tdm3 <- coxph(Surv(tstart, time, status) ~ trt + karno, 
               data = veteran_long)
 tdm4 <- coxph(Surv(tstart, time, status) ~ trt + karno + karno:log(time), 
               data = veteran_long)
 ```
+
+Verify these model results match the previous fits.
+
+```{r}
+list("n = 137" = coef(tdm1), "n = 5955" = coef(tdm3), 
+     "n = 137" = coef(tdm2), "n = 5955" = coef(tdm4))
+
+```
+
 
 Now we can formally compare the models using the `anova()` function. It appears the model with the time-dependent coefficient is better.
 
@@ -780,9 +798,9 @@ anova(tdm3, tdm4)
 
 ### Time-dependent variables
 
-We sometimes have variables that change over time (age, weight, status, etc). To accommodate these variables we can no longer assume proportional hazards. We must _extend_ the Cox model.
+We sometimes have variables that change over time (age, weight, status, etc). To accommodate these variables we can no longer assume proportional hazards. 
 
-Time-dependent variables are usually coded as _intervals of time_. This is sometimes called the _counting process method_. For example:
+Time-dependent variables are usually coded as _intervals of time_. This is sometimes called the _counting process method_. For example, lab values taken at day 0, 90, and 160:
 
 ```
     subject time1 time2 death  lab_value
@@ -791,7 +809,9 @@ Time-dependent variables are usually coded as _intervals of time_. This is somet
 3         1   160   220     1        1.3
 ```
 
-Note: you cannot interpolate time-dependent values. For example, we cannot suppose the lab value is 1.3 at day 45.
+We can read the first row as "over the interval from 0 to 90 the lab value for subject 1 was 0.7 and that this interval did not end in a death."
+
+Note: we cannot interpolate time-dependent values. For example, we cannot suppose the lab value is 1.3 at day 45.
 
 The classic example of a Cox PH model with a time-dependent variable is the Stanford Heart Transplant study. 103 patients were enrolled in a program to receive a heart transplant between 1967 and 1974. Of interest is survival time while waiting for a heart transplant and after receiving a transplant. This data is available with the {survival} package as `jasa1`. The time-dependent variable is transplant. Notice subject 4 was observed for 35 days, at day 35 received a transplant, and died at day 38. (age = age - 48; year = years after 1 Nov 1967; surgery = prior bypass surgery (1 = yes))
 
