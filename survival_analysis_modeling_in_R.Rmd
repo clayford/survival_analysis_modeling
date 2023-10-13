@@ -29,7 +29,10 @@ Enter a new code chunk and run the code `rnorm(10)` (sample 10 random values fro
 
 Survival analysis is a collection of procedures for analyzing the _time until an event occurs_. The methods were mostly developed in the medical field and concerned time until death, hence the name "survival analysis". Also known as _duration analysis_, _reliability analysis_, or _time-to-event analysis_. In this workshop we'll use the term "survival" generically.
 
-What makes survival analysis challenging is that rarely do all subjects experience the event of interest. When a subject does not experience the event, they are _censored_.  The most common type of censoring is _right censoring_. Imagine time flowing as a straight line left to right. When subjects enter the study the line begins on the left. When the event happens, the line ends on the right. If the event does not happen, the subject is right censored.
+What makes survival analysis challenging is that rarely do all subjects experience the event of interest. When a subject does not experience the event, they are _censored_.  The most common type of censoring is _right censoring_. Imagine time flowing as a straight line left to right. When subjects enter the study their timeline begins on the left. When the event happens, the subject's timeline ends on the right (x). If the event is not observed before the study ends (or the subject leaves the study), the subject's timeline is right censored (o).
+
+subject 1 ----------------------x
+subject 2 ----------------------------o
 
 A study that is analyzed using survival analysis typically has an _observation period_ during which subjects are enrolled and observed, or it concerns a window of time where objects are observed. When a subject or object is censored, that means they didn't experience the event _during_ the observation period. It does not mean they will never experience the event. A key assumption of survival analysis is that the censoring is _uninformative_ and not related to when the subject will experience the event. To try and enforce this, many studies will specify a hard end date to a study.
 
@@ -55,7 +58,7 @@ d <- readRDS(url(URL))
 
 Variables:  
 - survt (time in weeks; time until failure or censoring)
-- status (status; 0 = censored, 1 = failure)
+- status (0 = censored, 1 = failure)
 - sex (0 = female, 1 = male)
 - logwbc (log transformed white blood cell count)
 - rx (treatment or placebo)
@@ -124,10 +127,10 @@ events: number of subjects who experienced the event
 median: median survival time (12 weeks)  
 0.95LCL, 0.95UCL: lower/upper 95% CI on median survival time [8,22]
 
-Using `plot()` we can create a KM survival curve with 95% confidence bands (dashed lines). The y-axis is probability of "survival". Each "step" down represents 1 or more subjects experiencing the event. There appears to be about a 0.8 probability of not experiencing a remission to week 5.
+Using `plot()` we can create a KM survival curve with 95% confidence bands (dashed lines). The y-axis is probability of "survival". Each "step" down represents 1 or more subjects experiencing the event. Adding `mark.time = TRUE` indicates censored observations. The `pch` argument lets you choose the censoring symbol. (see `?points` for code definitions.) There appears to be about a 0.8 probability of not experiencing a remission to week 5.
 
 ```{r}
-plot(fit)
+plot(fit, mark.time = TRUE, pch = 8)
 ```
 
 Calling summary on the KM objects returns survival probabilities (probability of failure, or coming out of remission) for each observed point in time.
@@ -154,7 +157,7 @@ Estimated median time-to-failure for subjects in "trt" group is 23 weeks versus 
 This fit generates two KM curves. There is a `plot()` method but it looks pretty basic without some extra work. At a minimum we need to use the `lty` (line type) argument to distinguish between groups
 
 ```{r}
-plot(fit2, lty = 1:2)
+plot(fit2, lty = 1:2, mark.time = TRUE, pch = 8)
 ```
 
 The `ggsurvplot()` function from the {survminer} package looks nicer and includes "+" symbols to indicate censored subjects and a legend to identify groups.
@@ -240,13 +243,13 @@ The next section shows a 95% confidence interval on the hazard ratio. The hazard
 
 The "exp(-coef)" is the hazard ratio in the opposite direction. The hazard of failure on "treatment" is about 80% lower than the hazard of failure on "placebo".
 
-The statistic labeled "Concordance" reports the fraction of all pairs of subjects where the model correctly predicts the individual with the earlier event. Values in the 0.50 - 0.55 range suggest a flip of a coin would do as well as our model at correctly ordering pairs of subjects. The value of 0.69 is promising but not excellent. 
+The statistic labeled "Concordance" reports the fraction of all pairs of subjects where the model correctly predicts the individual with the earlier event. Values in the 0.50 - 0.55 range suggest a flip of a coin would do as well as our model at correctly ordering pairs of subjects. The value of 0.69 (+/- 0.04) is promising but not excellent. 
 
 The three tests at the end test the null that all model coefficients are simultaneously equal to 0. These are usually all in agreement. When these disagree, go with the Likelihood Ratio Test (Hosmer et al, p. 79)
 
 There is no R-squared reported. According to Hosmer et al, "there is not a single, simple, useful, easy to calculate and easy to interpret [R-squared] measure for a proportional hazards regression model." (p. 194)
 
-We can use the `ggadjustedcurves()` function from the {survminer} package to plot adjusted survival curves from our model.
+We can use the `ggadjustedcurves()` function from the {survminer} package to plot _adjusted survival curves_ from our model.
 
 ```{r}
 ggadjustedcurves(m1, variable = "rx", data = d)
@@ -394,6 +397,24 @@ adjcurve <- surv_adjustedcurves(m2, variable = "rx", data = d)
 subset(adjcurve, time == 10)
 ```
 
+Another way to visualize the model is to estimate survival proportions for _particular risk groups_. We can do that with the `survfit()` function. First we specify the risk groups in a new data frame. Below we specify two groups: a treated group with median logwbc and placebo group with median logwbc. We then call `ggsurvplot()` on the survfit object.
+
+```{r}
+nd <- data.frame(rx = c("placebo","trt"), logwbc = median(d$logwbc))
+fit <- survfit(m2, newdata = nd)
+ggsurvplot(fit, data = nd, conf.int = TRUE)
+```
+
+Another example: treatment risk groups with different logwbc levels. Notice the `ggsurvplot()` offers a `legend.labs` argument to change the legend labels. We set the confident interval off for demo purposes, but setting it to TRUE reveals the enormouse uncertainty in these estimates.
+
+```{r}
+nd <- data.frame(rx = "trt", logwbc = c(2.5,3,3.5))
+fit <- survfit(m2, newdata = nd)
+ggsurvplot(fit, data = nd, conf.int = FALSE,
+           legend.labs = paste(nd$rx, nd$logwbc))
+```
+
+
 ## CODE ALONG 4
 
 (1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate), and bmi.
@@ -412,6 +433,17 @@ cox.zph(whas_m2)
 (3) What's the interpretation of the age coefficient?
 
 Hazard of death increases about 6% for each additional year of age.
+
+(4) Visualize estimated survival proportions for males (gender = 0) ages 50,60, and 70 with median hr and median bmi.
+
+```{r}
+nd <- data.frame(gender = 0, age = c(50,60,70), 
+                 hr = median(whas$hr), bmi = median(whas$bmi))
+fit <- survfit(whas_m2, newdata = nd)
+ggsurvplot(fit, data = nd, conf.int = TRUE,
+           legend.labs = nd$age)
+```
+
 
 ## The Stratified Cox Model
 
@@ -796,6 +828,7 @@ Now we can formally compare the models using the `anova()` function. It appears 
 anova(tdm3, tdm4)
 ```
 
+
 ### Time-dependent variables
 
 We sometimes have variables that change over time (age, weight, status, etc). To accommodate these variables we can no longer assume proportional hazards. 
@@ -823,19 +856,18 @@ head(jasa1, n = 10)
 To include a time-dependent variable in a Cox PH model, we need to _include the time interval_ in the `Surv()` function. Notice below we have `Surv(start, stop, event)`. Here we model the hazard of death as a function of whether the subject had a transplant, whether they had prior bypass surgery, and their age.
 
 ```{r}
-tdm <- coxph(Surv(start, stop, event) ~ transplant + surgery + age,
+tdm5 <- coxph(Surv(start, stop, event) ~ transplant + surgery + age,
              data= jasa1)
-summary(tdm)
+summary(tdm5)
 ```
 
 According to this simplistic model, prior bypass surgery seems to lower the hazard of death when while waiting for/after receiving a heart transplant by about 54%.
 
-```{r}
-tdm2 <- coxph(Surv(start, stop, event) ~ transplant + surgery + tt(age),
-             data= jasa1, tt = function(x,t,...)x*log(t))
-summary(tdm2)
-```
+Visualizing Cox PH models with time-dependent variables or coefficients is a bit tricky. See the "Using Time Dependent Covariates" vignette for some pointers. 
 
+```{r}
+vignette("timedep", package = "survival")
+```
 
 
 ## Wrap-up
