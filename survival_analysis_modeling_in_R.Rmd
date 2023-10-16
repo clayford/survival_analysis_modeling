@@ -133,6 +133,8 @@ Using `plot()` we can create a KM survival curve with 95% confidence bands (dash
 plot(fit, mark.time = TRUE, pch = 8)
 ```
 
+See the section "How to calculate Kaplan-Meier estimates" in the appendix of this document for details on how the curves are calculated.
+
 Calling summary on the KM objects returns survival probabilities (probability of failure, or coming out of remission) for each observed point in time.
 
 ```{r}
@@ -145,7 +147,7 @@ We can specify specific times in `summary()` using the `times` argument. Below w
 summary(fit, times = seq(5,20,5))
 ```
 
-We're probably more interested in time-until-failure by treatment group (rx). For this we specify `Surv(survt, status) ~ rx`. Now we see different estimated median survival times by rx group.
+We're probably more interested in time-until-failure by treatment group (rx). For this we specify `Surv(survt, status) ~ rx`. Now we see different estimated median survival times _by rx group_.
 
 ```{r}
 fit2 <- survfit(Surv(survt, status) ~ rx, data = d)
@@ -189,25 +191,15 @@ URL2 <- "https://github.com/clayford/survival_analysis_modeling/raw/main/data/WH
 whas <- readRDS(url(URL2))
 ```
 
+
 (1) Create a KM curve for time versus "gender" (0 = male, 1 = female)
 
-```{r}
-km_fit <- survfit(Surv(time, fstat) ~ gender, data = whas)
-ggsurvplot(km_fit)
-```
 
-(3) What are the estimated survival probabilities for years 1 - 5?
-
-```{r}
-summary(km_fit, times = 1:5)
-```
+(2) What are the estimated survival probabilities for years 1 - 5?
 
 
 (3) Run a log-rank test on the KM curves for gender
 
-```{r}
-survdiff(Surv(time, fstat) ~ gender, data = whas)
-```
 
 
 ## Regression models for survival data
@@ -249,42 +241,60 @@ The three tests at the end test the null that all model coefficients are simulta
 
 There is no R-squared reported. According to Hosmer et al, "there is not a single, simple, useful, easy to calculate and easy to interpret [R-squared] measure for a proportional hazards regression model." (p. 194)
 
-We can use the `ggadjustedcurves()` function from the {survminer} package to plot _adjusted survival curves_ from our model.
+We can use our Cox PH model to create _covariate_adjusted survival curves_. To do so, we need to first use the `survfit()` function on the model object. Notice we need to set the covariate values to create the curves. Below we specify we want a curve for each level of rx.
 
 ```{r}
-ggadjustedcurves(m1, variable = "rx", data = d)
+sfit1 <- survfit(m1, newdata = data.frame(rx = c("trt", "placebo")))
 ```
 
-Compare to the descriptive KM plot (generated below). Notice the adjusted survival curves from the Cox PH model fit do not indicate censored observations. These are model-predicted expected survival curves calculated based on the Cox PH model. The KM plot shows observed data. Also notice the model-generated plot stops around 20 weeks and does not extrapolate since no one in the placebo group lasted beyond then.
+Now we're ready to make the plot. We can use `ggsurvplot()`, but notice we get warnings about deprecated functions. It appears the {survminer} package is not in active development or maintenance at the time of this writing (Oct 2023). However the package still seems to work and averages about 66,000 downloads per month.
+
+```{r}
+# set conf.int = FALSE to suppress CI ribbons
+ggsurvplot(sfit1, data = d)
+```
+
+Notice this plot assumes proportional hazards and uses all the data. Compare to the Kaplan-Meier curve below, which only uses the data in each treatment group and does not assume proportional hazards. Recall the KM curve is non-pararmetric and descriptive.
 
 ```{r}
 # KM plot
 ggsurvplot(fit2)
 ```
 
+There's a base R `plot()` method for survfit objects. Here's one way to make adjusted survival curves. (Run entire code chunk at once.)
+
+```{r}
+plot(sfit1, lty = 1:2, xlab = "Weeks", ylab = "Survival probability")
+legend("bottomleft", lty = 1:2, legend = c("trt", "placebo"))
+```
+
+If we would like to indicate censored times in the base R plot, we can add `mark.time = TRUE` to the `plot()` function.
+
+```{r}
+plot(sfit1, col = c("orange3", "royalblue2"), 
+     xlab = "Weeks", ylab = "Survival probability", mark.time = TRUE)
+legend("bottomleft", lty = 1, col = c("orange3","royalblue2"), 
+       legend = c("trt", "placebo"), bty = "n")
+```
+
+
 ## CODE ALONG 2
 
 (1) Fit a Cox PH model for time on gender using the WHAS data. Is this a good model for understanding survival time after admission to hospital for a heart attack?
 
-```{r}
-whas_m1 <- coxph(Surv(time, fstat) ~ gender, data = whas)
-summary(whas_m1)
-```
 
 (2) How do we interpret the coefficient for gender?
 
-The hazard of death for females (gender = 1) is about 46% higher than males.
 
-(3) Plot the adjusted survival curves for the Cox PH model
 
-```{r}
-ggadjustedcurves(whas_m1, variable = "gender", data = whas)
-```
+(3) Plot adjusted survival curves for the Cox PH model for each gender level.
+
+
 
 
 ## The proportional hazards assumption
 
-The Cox PH model assumes that the _hazard ratio is constant over time_. The model above implies the hazard of failure on placebo is about 4.8 times higher than the hazard of failure on treatment, no matter how long we observe the subjects. Notice the summary output above makes no reference to time.
+The Cox PH model assumes that the _hazard ratio is constant over time_. The model for the leukemia data above implies the hazard of failure on placebo is about 4.8 times higher than the hazard of failure on treatment, no matter how long we observe the subjects. Notice the summary output above makes no reference to time.
 
 Fortunately the {survival} package makes it pretty easy to assess these assumptions using the `cox.zph()` function. Use it on your model object. The null hypothesis is the hazard ratios are independent of time. A small p-value is evidence against the null hypothesis. The proportional hazard assumption is probably safe if the p-value is higher than, say, 0.05.
 
@@ -314,15 +324,8 @@ If the proportional hazards assumption appears to be violated, we may need to co
 
 (1) Check the proportional hazards assumption of the model we fit in CODE ALONG 2 using a test.
 
-```{r}
-cox.zph(whas_m1)
-```
 
 (2) Visually check the proportional hazards assumption of the model we fit in CODE ALONG 2.
-
-```{r}
-plot(cox.zph(whas_m1))
-```
 
 
 ## Cox PH model with multiple predictors
@@ -382,35 +385,20 @@ ggcoxzph(cox.zph(m2))
 ```
 
 
-Once again we can generate adjusted survival curves using our model. 
-
-```{r}
-ggadjustedcurves(m2, variable = "rx", data = d)
-```
-
-The technical details of how adjusted survival curves are calculated is beyond the scope of our presentation. By default, the `ggadjustedcurves()` function creates _conditional_ survival curves. Basically, all our data is used twice to predict expected survival: once as if everyone were in the "placebo" group, and again as if everyone were in the "treatment" group. See the help page for `ggadjustedcurves()` and the vignette that accompanies the {survival} package, "Adjusted Survival Curves". 
-
-To see the values that are plotted, we can call the `surv_adjustedcurves()` function and save the result, which is a data frame. Below we use `subset()` to compare expected probability of failure at 10 weeks between the two rx groups. Probability of "survival" (staying in remission) for those in the treatment group is about 0.71, versus 0.46 in the placebo group.
-
-```{r}
-adjcurve <- surv_adjustedcurves(m2, variable = "rx", data = d)
-subset(adjcurve, time == 10)
-```
-
-Another way to visualize the model is to estimate survival proportions for _particular risk groups_. We can do that with the `survfit()` function. First we specify the risk groups in a new data frame. Below we specify two groups: a treated group with median logwbc and placebo group with median logwbc. We then call `ggsurvplot()` on the survfit object.
+Once again we can visualize our Cox PH model creating survival curves for _particular groups of interest_. As before we specify the groups in a new data frame. Below we specify two groups: a treated group with median logwbc and placebo group with median logwbc. We then call `ggsurvplot()` on the survfit object.
 
 ```{r}
 nd <- data.frame(rx = c("placebo","trt"), logwbc = median(d$logwbc))
-fit <- survfit(m2, newdata = nd)
-ggsurvplot(fit, data = nd, conf.int = TRUE)
+sfit2 <- survfit(m2, newdata = nd)
+ggsurvplot(sfit2, data = nd, conf.int = FALSE)
 ```
 
-Another example: treatment risk groups with different logwbc levels. Notice the `ggsurvplot()` offers a `legend.labs` argument to change the legend labels. We set the confident interval off for demo purposes, but setting it to TRUE reveals the enormouse uncertainty in these estimates.
+Another example: "trt" groups with different logwbc levels. Notice the `ggsurvplot()` offers a `legend.labs` argument to change the legend labels. We set the confident interval off for demo purposes, but setting it to TRUE reveals the enormous uncertainty in these estimates.
 
 ```{r}
 nd <- data.frame(rx = "trt", logwbc = c(2.5,3,3.5))
-fit <- survfit(m2, newdata = nd)
-ggsurvplot(fit, data = nd, conf.int = FALSE,
+sfit3 <- survfit(m2, newdata = nd)
+ggsurvplot(sfit3, data = nd, conf.int = FALSE,
            legend.labs = paste(nd$rx, nd$logwbc))
 ```
 
@@ -419,30 +407,14 @@ ggsurvplot(fit, data = nd, conf.int = FALSE,
 
 (1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate), and bmi.
 
-```{r}
-whas_m2 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi, data = whas)
-summary(whas_m2)
-```
-
 (2) Assess the proportional hazards assumption of the model.
 
-```{r}
-cox.zph(whas_m2)
-```
 
 (3) What's the interpretation of the age coefficient?
 
-Hazard of death increases about 6% for each additional year of age.
 
 (4) Visualize estimated survival proportions for males (gender = 0) ages 50,60, and 70 with median hr and median bmi.
 
-```{r}
-nd <- data.frame(gender = 0, age = c(50,60,70), 
-                 hr = median(whas$hr), bmi = median(whas$bmi))
-fit <- survfit(whas_m2, newdata = nd)
-ggsurvplot(fit, data = nd, conf.int = TRUE,
-           legend.labs = nd$age)
-```
 
 
 ## The Stratified Cox Model
@@ -501,23 +473,30 @@ cox.zph(m4)
 
 The stratified Cox PH model is commonly used in practice to adjust for multiple sites in large clinical trials.
 
-Again we can plot adjusted survival curves for the variables we modeled.
+Again we can plot adjusted survival curves for the variables we modeled. Below we create four adjusted survival curves with logwbc held at the median value of 2.8. 
+
+1. Female, trt
+2. Female, placebo
+3. Male, trt
+4. Male, placebo
+
+Notice we create the first plot for females by using the `suvfit` indexing method. Rows 1 and 2 of the new data are for females, so we select just those rows using `sfit4[1:2]`.
 
 ```{r}
-ggadjustedcurves(m4, variable = "rx", data = d)
+nd <- expand.grid(rx = c("trt", "placebo"), sex = 0:1)
+nd$logwbc <- median(d$logwbc)
+sfit4 <- survfit(m4, newdata = nd)
+ggsurvplot(sfit4[1:2], data = d, legend.labs = c("trt", "placebo"), 
+           title = "Female strata")
 ```
 
-We can also plot adjusted survival curves for the stratifying variable.
+And we can create a plot for males using `sfit4[3:4]`
 
 ```{r}
-ggadjustedcurves(m4, variable = "sex", data = d)
+ggsurvplot(sfit4[3:4], data = d, legend.labs = c("trt", "placebo"), 
+           title = "Male strata")
 ```
 
-Notice this isn't much different from what we get when plot a Kaplan-Meier curve for the raw data by sex. We only stratified on sex in the model above, we didn't use it as a predictor.
-
-```{r}
-survfit(Surv(survt, status) ~ sex, data = d) |> ggsurvplot()
-```
 
 
 ## CODE ALONG 5
@@ -670,41 +649,13 @@ summary(whas_m3)
 
 (1) Check the bmi score residuals for subjects with high leverage.
 
-```{r}
-whas_r <- residuals(whas_m3, type = "score")
-plot(whas_r[,"bmi"] ~ whas$bmi)
-```
-
-```{r}
-which(whas_r[,"bmi"] > 20)
-```
-
 
 
 (2) Check the bmi dfbetas for subjects with high influence.
 
-```{r}
-whas_r2 <- residuals(whas_m3, type = "dfbeta")
-colnames(whas_r2) <- colnames(whas_r)
-plot(whas_r2[,"bmi"] ~ whas$bmi)
-```
-
-```{r}
-which(whas_r2[,"bmi"] > 0.004)
-```
 
 (3) Investigate any subjects that are turned up in these assessments and see how their removal from the model changes the results.
 
-```{r}
-whas[112,]
-```
-
-
-```{r}
-whas_m4 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
-                 data = whas[-112,])
-summary(whas_m4)
-```
 
 
 ## The Extended Cox Model
@@ -714,7 +665,7 @@ So far we have not incorporated time into our models. Time comes into play in tw
 1. _Time-dependent coefficients_. We may have model coefficients that vary with time. In other words, they may _interact with time_ and change. For example, the effect of a treatment on the hazard may decrease over time. Or the effect of age on the hazard may increase over time.
 2. _Time-dependent variables_. We may have variables that _change over time_. In other words, we may have multiple measures on variables. For example, we may have weekly measurements of white blood cell counts, or we may have a time-dependent intervention that happens during the observation period, such as a transplant.
 
-In either case we need to extend the Cox PH model to incorporate time. Recall the standard Cox PH model. Notice time is not part of the linear predictor (XB). It's only part of the baseline hazard which it doesn't estimate.
+In either case we need to _extend_ the Cox PH model to incorporate time. Recall the standard Cox PH model. Notice time is not part of the linear predictor (XB). Time is only part of the baseline hazard which is not estimated.
 
 $$h(t,X) = h_{0}(t)e^{X\beta}$$
 
@@ -732,7 +683,7 @@ Let's look at one example of each.
 
 Recall the proportional hazards assumption: the hazard ratio is _constant over time_. When this assumption is violated for a _continuous variable_, we may wish to incorporate a time-dependent coefficient. (For a categorical variable, we would probably pursue a stratified Cox PH model.)
 
-To illustrate we'll use the veteran data set that comes with the {survival} package, which has data on a randomized trial of two treatment regimens for lung cancer. Below we model survival time as a function treatment (1=standard, 2=test) and Karnofsky performance score (0 - 100), which is a scale that measures a patient's ability to carry out activities of daily living. Higher score is better. The data has information on 137 subjects.
+To illustrate we'll use the veteran data set that comes with the {survival} package, which has data on a randomized trial of two treatment regimens for lung cancer. Below we model survival time as a function of treatment (1=standard, 2=test) and Karnofsky performance score (0 - 100), which is a scale that measures a patient's ability to carry out activities of daily living. Higher score is better. The data has information on 137 subjects.
 
 ```{r}
 nrow(veteran)
@@ -757,7 +708,7 @@ At first glance it seems we can simply add the time variable to the right-hand s
 tdmX <- coxph(Surv(time, status) ~ trt + karno + karno:time, data = veteran)
 ```
 
-The correct way is to use a _time-transform_ function via the `tt` argument. The usual syntax is `function(x, t, ...) x * t` where `x` is the argument for the predictor, `t` is the argument for `time`, and `...` is the "dots" argument used to pass through other arguments from other functions. Below we log transform the `t` argument since time is heavily skewed.
+The correct way is to use a _time-transform_ function via the `tt` argument. The usual syntax is `function(x, t, ...) x * log(t)` where `x` is the argument for the predictor, `t` is the argument for `time`, and `...` is the "dots" argument used to pass through other arguments from other functions. 
 
 ```{r}
 tdm2 <- coxph(Surv(time, status) ~ trt + karno + tt(karno), 
@@ -801,7 +752,7 @@ dtimes <- unique(veteran$time[veteran$status == 1])
 veteran_long <- survSplit(Surv(time, status) ~ ., 
                           data = veteran, 
                           cut = dtimes)
-head(veteran_long)
+str(veteran_long)
 ```
 
 Now we re-fit both models to the expanded data. Notice we need to _include the time interval_ in the `Surv()` function: `Surv(tstart, time, status)`. This time it's OK to put "time" on the right-hand side of the model. 
@@ -874,7 +825,6 @@ vignette("timedep", package = "survival")
 
 This was a short introduction to survival analysis. There is much we did not cover, such as:
 
-- Additional wrinkles to modeling time-dependent covariates
 - Right-censored survival times
 - Parametric regression models
 - Recurrent event models
@@ -892,6 +842,7 @@ Hopefully this workshop will give you the foundation to continue learning more a
 - Harrell, F. (2015). _Regression Modeling Strategies, 2nd Ed_. Springer. 
 - Hosmer, D., Lemeshow, S., and May, S. (2008). _Applied Survival Analysis, 2nd Ed_. Wiley.
 - Kleinbaum, D. and Klein, M. (2005). _Survival Analysis, a Self-Learning Text, 2nd Ed_. Springer.
+- Moore, D. (2016) _Applied Survival Analysis Using R_. Springer.
 - https://www.publichealth.columbia.edu/research/population-health-methods/time-event-data-analysis
 - https://missingdatasolutions.rbind.io/2022/12/cox-baseline-hazard/
 - Freireich, et al. (1963) The Effect of 6-Mercaptopurine on the Duration of Steroid-induced Remissions in Acute Leukemia. Blood (1963) 21 (6): 699–716. https://doi.org/10.1182/blood.V21.6.699.699
@@ -1036,4 +987,67 @@ At week 3 (row 3) we have 38 subjects at risk and one subject who experienced th
 ```
 
 And so forth. For this reason, the Kaplan-Meier estimator is also called the _product limit estimator_. At each time point, the estimated probability of survival is obtained by _successive multiplication_ of the estimated conditional probabilities. 
+
+### How survfit() calculates covariate-adjusted survival curves
+
+Recall model m2 we fit using the leukemia data and the covariate-adjusted survival curves we created using the model.
+
+```{r}
+m2 <- coxph(Surv(survt, status) ~ rx + logwbc, data = d)
+```
+
+Below we show the values that were plotted using `summary()` instead of the plots. Column "survival1" shows estimated survival probabilities for "trt" and "survival2" shows estimated survival probabilities for "placebo". How are those survival probabilities calculated?
+
+```{r}
+nd <- data.frame(rx = c("trt", "placebo"), 
+                 logwbc = median(d$logwbc))
+sfit <- survfit(m2, newdata = nd)
+summary(sfit, censored = TRUE)
+```
+
+
+To find an estimated survival curve for a set of covariate values, z, we use the following function:
+
+$$S(t|z) = [S_0(t)]^{\text{exp}(z\hat{\beta})}$$ 
+
+where $S_0(t)$ is the _baseline survival function_. We can derive the baseline survival function from the following relationship:
+
+$$S_0(t) = \text{exp}[-H_0(t)]$$ 
+
+where $H_0(t)$ is the _baseline cumulative hazard function_, which is the cumulative sum of the estimated baseline hazards, $h_0(t_j)$. The estimated baseline hazards can be derived using the following function:
+
+$$h_0(t_i) = \frac{d_i}{\sum\limits_{i\in{R_i}}\text{exp}(z_i\hat{\beta})} $$ 
+
+where $d_i$ are the number of subjects who fail at time i, $R_i$ is the number at risk at time i, and $z_i$ are the covariates used to fit the model.
+
+Let's do this "by hand" for the model m2 above. 
+
+First we use the `basehaz()` function to calculate the cumulative hazards, $H_0$.
+
+```{r}
+H0 <- basehaz(m2)
+```
+
+Next we calculate the baseline survival function:
+
+```{r}
+S0 <- exp(-H0)
+```
+
+And then we calculate the estimated survival curves for the two covariate values. We need to convert our new data to a matrix that contains only numbers. This means converting "trt" and "placebo" to 0 and 1. Notice we also center the data by subtracting the means of the covariates from the linear predictor: `as.matrix(nd) %*% beta`. (This is what survfit does.) Finally we calculate the adjusted curves by raising the baseline survival to the power of the linear predictor, zB. The `outer()` function allows us to do this in one line. 
+
+```{r}
+nd <- matrix(c(0,1,2.8,2.8), ncol = 2)
+beta <- coef(m2)
+xcenter <- sum(m2$means * beta)
+zB <- exp(c(as.matrix(nd) %*% beta) - xcenter)
+St <- outer(S0$hazard, zB, "^")
+round(St, 4)
+```
+
+Compare St to `survfit()` output to verify they match.
+
+```{r}
+summary(sfit, censored = TRUE)
+```
 

@@ -5,29 +5,22 @@ Code along answers
 
 For our code alongs we'll work with data from the Worcester Heart Attack Study (WHAS). The main goal of this study was to describe factors associated with survival time following hospital admission for acute myocardial infarction, aka heart attack. The time variable is "time" (in years) and the censoring variable is "fstat".
 
-```{r}
-whas <- readRDS("WHAS.rds")
-```
+URL2 <- "https://github.com/clayford/survival_analysis_modeling/raw/main/data/WHAS.rds"
+whas <- readRDS(url(URL2))
 
 (1) Create a KM curve for time versus "gender" (0 = male, 1 = female)
 
-```{r}
 km_fit <- survfit(Surv(time, fstat) ~ gender, data = whas)
 ggsurvplot(km_fit)
-```
 
-(3) What are the estimated survival probabilities for years 1 - 5?
+(2) What are the estimated survival probabilities for years 1 - 5?
 
-```{r}
 summary(km_fit, times = 1:5)
-```
 
 
 (3) Run a log-rank test on the KM curves for gender
 
-```{r}
 survdiff(Surv(time, fstat) ~ gender, data = whas)
-```
 
 
 
@@ -36,84 +29,81 @@ survdiff(Surv(time, fstat) ~ gender, data = whas)
 
 (1) Fit a Cox PH model for time on gender using the WHAS data. Is this a good model for understanding survival time after admission to hospital for a heart attack?
 
-```{r}
 whas_m1 <- coxph(Surv(time, fstat) ~ gender, data = whas)
 summary(whas_m1)
-```
+
 
 (2) How do we interpret the coefficient for gender?
 
 The hazard of death for females (gender = 1) is about 46% higher than males.
 
-(3) Plot the adjusted survival curves for the Cox PH model
 
-```{r}
-ggadjustedcurves(whas_m1, variable = "gender", data = whas)
-```
+(3) Plot adjusted survival curves for the Cox PH model for each gender level.
 
+sfit1_whas <- survfit(whas_m1, newdata = data.frame(gender = 0:1))
+ggsurvplot(sfit1_whas, data = whas)
 
 
 ## CODE ALONG 3
 
 (1) Check the proportional hazards assumption of the model we fit in CODE ALONG 2 using a test.
 
-```{r}
+
 cox.zph(whas_m1)
-```
+
 
 (2) Visually check the proportional hazards assumption of the model we fit in CODE ALONG 2.
 
-```{r}
-plot(cox.zph(whas_m1))
-```
 
+plot(cox.zph(whas_m1))
 
 
 ## CODE ALONG 4
 
 (1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate, bpm), and bmi.
 
-```{r}
 whas_m2 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi, data = whas)
 summary(whas_m2)
-```
 
 (2) Assess the proportional hazards assumption of the model.
 
-```{r}
 cox.zph(whas_m2)
-```
+
 
 (3) What's the interpretation of the age coefficient?
 
 Hazard of death increases about 6% for each additional year of age.
 
 
+(4) Visualize estimated survival proportions for males (gender = 0) ages 50,60, and 70 with median hr and median bmi.
+
+
+nd <- data.frame(gender = 0, age = c(50,60,70), 
+                 hr = median(whas$hr), bmi = median(whas$bmi))
+sfit2_whas <- survfit(whas_m2, newdata = nd)
+ggsurvplot(sfit2_whas, data = nd, conf.int = TRUE,
+           legend.labs = nd$age)
+           
 
 ## CODE ALONG 5
 
 (1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate, bpm), and bmi, stratified on year (Cohort Year).
 
-```{r}
+
 whas_m3 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + strata(year), 
                  data = whas)
-```
 
 (2) Test the no-interaction assumption by fitting a new model that allows the stratification on year to interact with the other variables.
 
-```{r}
 whas_m4 <- coxph(Surv(time, fstat) ~ (gender + age + hr + bmi) * strata(year), 
             data = whas)
 anova(whas_m3, whas_m4)
-```
 
 (3) Do we need to stratify on year?
 
-```{r}
 whas_m5 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
                  data = whas)
 cox.zph(whas_m5)
-```
 
 
 
@@ -121,48 +111,32 @@ cox.zph(whas_m5)
 
 In the previous code along we fit the following model:
 
-```{r}
 whas_m3 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
                  data = whas)
 summary(whas_m3)
-```
 
 (1) Check the bmi score residuals for subjects with high leverage.
 
-```{r}
 whas_r <- residuals(whas_m3, type = "score")
 plot(whas_r[,"bmi"] ~ whas$bmi)
-```
 
-```{r}
 which(whas_r[,"bmi"] > 20)
-```
 
 
 
 (2) Check the bmi dfbetas for subjects with high influence.
 
-```{r}
 whas_r2 <- residuals(whas_m3, type = "dfbeta")
 colnames(whas_r2) <- colnames(whas_r)
 plot(whas_r2[,"bmi"] ~ whas$bmi)
-```
 
-```{r}
 which(whas_r2[,"bmi"] > 0.004)
-```
+
 
 (3) Investigate any subjects that are turned up in these assessments and see how their removal from the model changes the results.
 
-```{r}
 whas[112,]
-```
 
-
-```{r}
-whas_m3 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
+whas_m4 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
                  data = whas[-112,])
-summary(whas_m3)
-```
-
-
+summary(whas_m4)
