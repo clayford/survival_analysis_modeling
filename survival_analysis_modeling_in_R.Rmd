@@ -40,7 +40,7 @@ In this workshop we want to get you up and running with _modeling survival data_
 
 ## Load packages and data
 
-We're going to use the following packages in this workshop. 
+We're going to use the following packages in this workshop. The {survival} package is a recommended R package and comes with R. The {survminer} package is a user-contributed package that needs to be installed.
 
 ```{r}
 library(survival)
@@ -162,7 +162,7 @@ This fit generates two KM curves. There is a `plot()` method but it looks pretty
 plot(fit2, lty = 1:2, mark.time = TRUE, pch = 8)
 ```
 
-The `ggsurvplot()` function from the {survminer} package looks nicer and includes "+" symbols to indicate censored subjects and a legend to identify groups.
+The `ggsurvplot()` function from the {survminer} package looks nicer and includes a legend to identify groups.
 
 ```{r}
 ggsurvplot(fit2)
@@ -254,7 +254,7 @@ Now we're ready to make the plot. We can use `ggsurvplot()`, but notice we get w
 ggsurvplot(sfit1, data = d)
 ```
 
-Notice this plot assumes proportional hazards and uses all the data. Compare to the Kaplan-Meier curve below, which only uses the data in each treatment group and does not assume proportional hazards. Recall the KM curve is non-pararmetric and descriptive.
+Notice this plot assumes proportional hazards and uses all the data. Compare to the Kaplan-Meier curve below, which only uses the data in each treatment group and does not assume proportional hazards. Recall the KM curve is non-parametric and descriptive.
 
 ```{r}
 # KM plot
@@ -277,6 +277,19 @@ legend("bottomleft", lty = 1, col = c("orange3","royalblue2"),
        legend = c("trt", "placebo"), bty = "n")
 ```
 
+As before we can use the `summary()` method on the survfit object to see the specific survival probabilities at specific times.
+
+```{r}
+summary(sfit1, times = c(5,10,15,20))
+```
+
+Likewise we can print the survfit object to see estimated median survival times.
+
+```{r}
+sfit1
+```
+
+See the section "How survfit() calculates covariate-adjusted survival curves" in the appendix of this document for details on how the curves are calculated.
 
 ## CODE ALONG 2
 
@@ -487,14 +500,14 @@ nd <- expand.grid(rx = c("trt", "placebo"), sex = 0:1)
 nd$logwbc <- median(d$logwbc)
 sfit4 <- survfit(m4, newdata = nd)
 ggsurvplot(sfit4[1:2], data = d, legend.labs = c("trt", "placebo"), 
-           title = "Female strata")
+           title = "Female")
 ```
 
 And we can create a plot for males using `sfit4[3:4]`
 
 ```{r}
 ggsurvplot(sfit4[3:4], data = d, legend.labs = c("trt", "placebo"), 
-           title = "Male strata")
+           title = "Male")
 ```
 
 
@@ -503,26 +516,15 @@ ggsurvplot(sfit4[3:4], data = d, legend.labs = c("trt", "placebo"),
 
 (1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate, and bmi, stratified on year (Cohort Year).
 
-```{r}
-whas_m3 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + strata(year), 
-                 data = whas)
-```
+
 
 (2) Test the no-interaction assumption by fitting a new model that allows the stratification on year to interact with the other variables.
 
-```{r}
-whas_m4 <- coxph(Surv(time, fstat) ~ (gender + age + hr + bmi) * strata(year), 
-            data = whas)
-anova(whas_m3, whas_m4)
-```
+
 
 (3) Do we need to stratify on year?
 
-```{r}
-whas_m5 <- coxph(Surv(time, fstat) ~ gender + age + hr + bmi + year, 
-                 data = whas)
-cox.zph(whas_m5)
-```
+
 
 
 ## Regression diagnostics
@@ -581,7 +583,7 @@ Subject 19 appears to stand out by being in the treatment group but experiencing
 
 To assess influence, we can use _scaled score residuals_, also known as "dfbetas". Each subject in a Cox PH model will have a _separate dfbeta for each variable_ in the model. The larger a dfbeta for a particular variable (in absolute value), the larger the "influence".
 
-We can extract score residuals using the `residual()` function with `type = dfbeta`. Below we request dfbetas for model m4. Again, notice there is a separate residual for each variable in the model. 
+We can extract score residuals using the `residual()` function with `type = "dfbeta"`. Below we request dfbetas for model m4. Again, notice there is a separate residual for each variable in the model. 
 
 ```{r}
 r2 <- residuals(m4, type = "dfbeta")
@@ -601,7 +603,7 @@ Again we can use scatter plots and box plots to investigate influence.
 plot(r2[,2] ~ d$logwbc)
 ```
 
-Four subjects seem to stand out:
+The same four subjects seem to stand out:
 
 ```{r}
 which(r2[,2] < -0.1)
@@ -609,10 +611,10 @@ which(r2[,2] < -0.1)
 
 
 ```{r}
-boxplot(r2[,2] ~ d$rx)
+boxplot(r2[,1] ~ d$rx)
 ```
 
-Three subjects appear to have outlying dfbeta values.
+And the same three subjects appear to have outlying dfbeta values for rx.
 
 ```{r}
 which(r2[,1] < -0.1)
@@ -630,7 +632,7 @@ coef(m4a)["rxplacebo"]/coef(m4)["rxplacebo"]
 
 With subject 19 removed from the model, the coefficient estimate for rx increases by almost 15%, which makes the treatment look even better. This doesn't mean we should drop the subject. It just helps us understand the impact a single subject has on our model. The decision to drop subjects should be carefully considered and not made based on just residual values.
 
-The {survminer} package offers the `ggcoxdiagnostics()` function to create similar plots, but is currently (as of Sept 2023) throwing warnings about deprecated tidyverse functions. It also creates the same type of plot regardless whether the predictor is numeric or categorical.
+The {survminer} package offers the `ggcoxdiagnostics()` function to create similar plots, but is currently (as of Oct 2023) throwing warnings about deprecated tidyverse functions. It also creates the same type of plot regardless whether the predictor is numeric or categorical.
 
 ```{r}
 ggcoxdiagnostics(m4, type = "score")
