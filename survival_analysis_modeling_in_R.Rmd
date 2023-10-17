@@ -401,7 +401,7 @@ ggcoxzph(cox.zph(m2))
 Once again we can visualize our Cox PH model creating survival curves for _particular groups of interest_. As before we specify the groups in a new data frame. Below we specify two groups: a treated group with median logwbc and placebo group with median logwbc. We then call `ggsurvplot()` on the survfit object.
 
 ```{r}
-nd <- data.frame(rx = c("placebo","trt"), logwbc = median(d$logwbc))
+nd <- data.frame(rx = c("trt", "placebo"), logwbc = median(d$logwbc))
 sfit2 <- survfit(m2, newdata = nd)
 ggsurvplot(sfit2, data = nd, conf.int = FALSE)
 ```
@@ -415,10 +415,13 @@ ggsurvplot(sfit3, data = nd, conf.int = FALSE,
            legend.labs = paste(nd$rx, nd$logwbc))
 ```
 
+See the section "Adjusted Survival Curves for Cox Proportional Hazards Model" in the appendix of this document for an alternative but computationally more intensive approach to creating adjusted survival curves.
+
 
 ## CODE ALONG 4
 
 (1) Fit a Cox PH model to the WHAS data using gender, age, hr (initial heart rate), and bmi.
+
 
 (2) Assess the proportional hazards assumption of the model.
 
@@ -1051,5 +1054,49 @@ Compare St to `survfit()` output to verify they match.
 
 ```{r}
 summary(sfit, censored = TRUE)
+```
+
+### Adjusted Survival Curves for Cox Proportional Hazards Model
+
+In this workshop we presented covariate-adjusted survival curves using a fitted Cox PH model via `survfit()`. Another approach is to produce a predicted survival curve _for every subject_ of some hypothetical population, and then _take the average of these curves_. This approach is implemented in the `survexp()` function.
+
+Recall the Cox PH model m2:
+
+```{r}
+formula(m2)
+```
+
+An example of covariate-adjusted survival curves is two curves, one each for rx level with logwbc set to the overall median value. Below `survfit()` calculates two curves based on the model coefficients and the specified covariates.
+
+```{r}
+nd <- data.frame(rx = c("trt","placebo"), logwbc = median(d$logwbc))
+sf1 <- survfit(m2, newdata = nd)
+plot(sf1, lty = 1:2)
+```
+
+Compare this to the adjusted survival curves returned by `survexp()`. Below we specify we want survival curves for each level of rx using the formula notation, `~ rx`. We set `ratetable = m2` to reference our fitted Cox model. Below `survexp()` calculates survival curves for _each subject_ as if they were in the placebo group and then calculates the average survival curve (dashed line), and then does the same for everyone as if they were in the treated group (solid line). 
+
+```{r}
+sf2 <- survexp(~ rx, data=d, ratetable=m2)
+plot(sf2, lty = 1:2)
+```
+
+Here's a side-by-side comparison.
+
+```{r}
+op <- par(mfrow = c(1,2))
+plot(sf1, lty = 1:2, main = "survfit()")
+plot(sf2, lty = 1:2, main = "survexp()")
+par(op)
+```
+
+The one on the left shows two expected curves (placebo and trt) when logwbc is held at the median value, while the one on the right shows two average curves (placebo and trt) that were calculated from subject-specific survival curves that were estimated using subject-specific logwbc values. 
+
+The {survminer} function `ggadjustedcurves()` creates these types of adjusted survival curves. Be warned this function can be quite slow for large data sets that have thousands of subjects.
+
+See the "Adjusted Survival Curves" vignette that accompanies the {survival} package for more information.
+
+```{r}
+vignette("adjcurve", package = "survival")
 ```
 
