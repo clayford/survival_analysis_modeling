@@ -1056,6 +1056,52 @@ Compare St to `survfit()` output to verify they match.
 summary(sfit, censored = TRUE)
 ```
 
+### How basehaz() calculates cumulative hazards
+
+Above we used `basehaz()` to calculate cumulative hazards on our way to estimating covariate-adjusted survival curves. How does that work?
+
+Calculating cumulative hazards from a Cox PH model is tricky, especially when you have ties in the data. We demonstrate below assuming we have used the breslow method to handle ties. This is easier to show. First we refit model m2 using `ties = "breslow"`. (Recall the default method to handle ties is "efron"). The `basehaz()` returns a data frame with two columns: cumulative hazards and time. 
+
+```{r}
+m2 <- coxph(Surv(survt, status) ~ logwbc + rx, data = d, 
+            ties = "breslow")
+bh <- basehaz(m2)
+bh
+```
+
+Here's one way to calculate the cumulative hazards by hand. The code below implements the following function to calculate the time-specific individual hazards, which are saved into a vector called "haz".
+
+$$h_0(t_i) = \frac{d_i}{\sum\limits_{i\in{R_i}}\text{exp}(z_i\hat{\beta})} $$ 
+
+We then use the `cumsum()` function to calculate the cumulate hazards.
+
+```{r}
+# get the model coefficients
+beta <- coef(m2)
+# make prediction with model for all data and center
+# Note: coxph() internally scales and centers data
+xcenter <- sum(m2$means * beta)
+risk <- c(exp(model.matrix(m2) %*% beta - xcenter))
+# get the time vector (includes the censored times)
+dtime <- d$survt
+# get the censoring vector
+status <- d$status
+# T/F vector of events (TRUE = time when someone experienced event)
+death <- status == 1
+# get events in order of occurrence
+nevent <- as.vector(rowsum(as.numeric(death), dtime))
+# cumulative risk (in order of occurrence)
+rcumsum <- function(x) rev(cumsum(rev(x)))
+nrisk <- rcumsum(rowsum(risk, dtime))
+# calculate estimated hazards; this is h0(t)
+haz <- nevent/nrisk 
+# calculate cumulative hazard; basehaz() does this!
+cumhaz <- cumsum(haz)
+# compare to basehaz() output above
+cbind(cumhaz, time = sort(unique(dtime)))
+```
+
+
 ### Adjusted Survival Curves for Cox Proportional Hazards Model
 
 In this workshop we presented covariate-adjusted survival curves using a fitted Cox PH model via `survfit()`. Another approach is to produce a predicted survival curve _for every subject_ of some hypothetical population, and then _take the average of these curves_. This approach is implemented in the `survexp()` function.
